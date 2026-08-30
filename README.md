@@ -1,1013 +1,147 @@
-Yes. But before designing it, I want to pressure-test the assumption:
+# AEGIS
 
-**Aegis should not become another giant “AI platform” that competes with Ancient.**
-
-Ancient builds and runs AI systems.
-Aegis should answer:
+**AI Evaluation, Reliability & Observability Platform**
 
 > **Is this AI system actually good, safe, reliable, and getting worse over time?**
 
-So the design must stay focused.
-
-# AEGIS
-
-## AI Evaluation, Reliability & Observability Platform
+Aegis measures and verifies AI systems — it does **not** build agents, act as an LLM
+gateway, or compete with the platforms that run them. It answers *"how do we know
+those agents actually work?"* for anything ancient builds and runs.
 
 ```text
-                 ┌───────────────────────────┐
-                 │         YOUR AI APP       │
-                 │                           │
-                 │ LLM / RAG / Agent / Tools │
-                 └─────────────┬─────────────┘
-                               │
-                    Traces / Test Runs
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                          AEGIS                              │
-│                                                             │
-│  ┌────────────┐    ┌──────────────┐    ┌────────────────┐   │
-│  │ Ingestion  │───▶│ Orchestrator │───▶│ Evaluation     │   │
-│  │ & Tracing  │    │              │    │ Engine         │   │
-│  └────────────┘    └──────────────┘    └───────┬────────┘   │
-│                                                 │            │
-│       ┌─────────────────────────────────────────┼────────┐   │
-│       ▼                 ▼                       ▼        │   │
-│   Quality Eval      Safety Eval          Reliability     │   │
-│                                                      Cost│   │
-│       └───────────────────────┬──────────────────────────┘   │
-│                               ▼                              │
-│                      Analysis Engine                         │
-│             Regression / Failure / Comparison                │
-│                               │                              │
-│                               ▼                              │
-│                        Dashboard/API                         │
-└─────────────────────────────────────────────────────────────┘
+                  ┌───────────────────────────┐
+                  │         YOUR AI APP       │
+                  │   LLM / RAG / Agent / …   │
+                  └─────────────┬─────────────┘
+                                │  traces / test runs
+                                ▼
+       ┌──────────────────────────────────────────────────────┐
+       │  CONTROL  │    EXECUTION    │        EVIDENCE        │
+       │  authority, snapshots & decisions   immutable records│
+       └──────────────────────────────────────────────────────┘
 ```
 
 ---
 
-# 1. The Core Product Model
+## Status
 
-The most important design decision:
+| Phase | Scope | State |
+|-------|-------|-------|
+| 0 | Scaffold: packaging, layer layout, gates, CI | ✅ done |
+| 1 | Domain layer: tenancy, targets/versions (immutability), datasets (draft→lock), events, registry | ✅ done |
+| 2–5 | Application, interface, infrastructure, execution, evaluation, analysis… | ⏳ phased build (see Roadmap) |
 
-## Everything revolves around an `AI Target`
-
-An AI Target can be:
-
-```text
-LLM Application
-RAG Pipeline
-Agent
-Multi-Agent System
-Tool-Using Agent
-Model API
-```
-
-Example:
-
-```text
-Target
-├── id
-├── name
-├── type
-├── endpoint
-├── version
-├── environment
-└── configuration
-```
-
-Example:
-
-```text
-Customer Support Agent
-Version: v2.4
-Type: Agent
-Environment: Production
-```
-
-Then everything is evaluated against that target.
+The full roadmap is defined in [`docs/implementation/implementation-order.md`](docs/implementation/implementation-order.md)
+and traced against requirements in [`docs/requirements/`](docs/requirements).
 
 ---
 
-# 2. Top-Level Architecture
+## Getting started
 
-```mermaid
-graph TB
+```powershell
+# create env
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -e ".[dev]"
 
-    CLIENT[SDK / REST API / CI Pipeline]
-    
-    CLIENT --> API
-
-    subgraph AEGIS API
-        API[API Gateway]
-        AUTH[Auth & Tenant Service]
-        TARGET[Target Registry]
-        EXP[Experiment Service]
-        DATASET[Dataset Service]
-    end
-
-    API --> AUTH
-    API --> TARGET
-    API --> EXP
-    API --> DATASET
-
-    EXP --> QUEUE[Job Queue]
-
-    QUEUE --> ORCH[Evaluation Orchestrator]
-
-    ORCH --> EXEC[Execution Workers]
-
-    EXEC --> TARGET_APP[Target AI System]
-
-    EXEC --> TRACE[Trace Collector]
-
-    TRACE --> EVAL[Evaluation Engine]
-
-    EVAL --> METRICS[Metric Workers]
-
-    METRICS --> RESULTS[(Evaluation Results)]
-
-    RESULTS --> ANALYSIS[Analysis Engine]
-
-    ANALYSIS --> API
-
-    API --> UI[Web Dashboard]
+# run all gates locally (same as CI)
+.\.venv\Scripts\ruff check src tests scripts
+.\.venv\Scripts\ruff format --check src tests scripts
+.\.venv\Scripts\mypy src
+.\.venv\Scripts\python scripts\check_domain_purity.py
+.\.venv\Scripts\python scripts\validate_docs.py
+.\.venv\Scripts\python -m pytest -m unit -q --cov=aegis
 ```
+
+Unit tests are marked `unit` (fast, pure, no external services).
 
 ---
 
-# 3. The Most Important Flow
+## Architecture in one picture
 
-Let's say you have Ancient.
+Open [`docs/aegis-system-architecture.excalidraw`](docs/aegis-system-architecture.excalidraw)
+in [Excalidraw](https://excalidraw.com) for the full diagram — three planes, every
+component annotated, fill colors encode responsibility, and numbered lifecycle badges
+walk the ①start-run → ⑦evidence-link flow.
 
-You want to evaluate it.
+Plane summary:
 
-You create:
+- **Control plane** — authority, snapshots, decisions. API gateway, auth & tenancy,
+  target registry (versions freeze once referenced), dataset service (draft → lock),
+  experiment service (snapshots once), policy & gates (PASS / WARN / BLOCK).
+- **Execution plane** — running work against targets. Redis-backed job queue
+  (ADR-002), isolated execution workers, target adapters, and the evaluation fabric
+  of isolated evaluator plugins (ADR-004).
+- **Evidence plane** — immutable verification records. OTel-compatible trace store
+  (ADR-005), results, artifacts, and the evidence graph. Rule: **no score without
+  evidence** — every score links execution → trace → evaluator → evidence.
 
-```text
-Experiment
-│
-├── Target
-│      Ancient v0.4
-│
-├── Dataset
-│      1,000 tasks
-│
-├── Metrics
-│      Task Success
-│      Tool Accuracy
-│      Latency
-│      Cost
-│
-└── Configuration
-       Parallelism: 10
-```
-
-Then:
-
-```text
-User
- │
- ▼
-Create Experiment
- │
- ▼
-Evaluation Orchestrator
- │
- ├── Test Case 1 ───► Worker
- │                        │
- │                        ▼
- │                   Ancient
- │                        │
- │                        ▼
- │                    Trace
- │
- ├── Test Case 2 ───► Worker
- │
- └── Test Case N ───► Worker
-```
-
-At the end:
-
-```text
-1000 Test Cases
-      │
-      ▼
-Metric Computation
-      │
-      ▼
-Evaluation Report
-      │
-      ▼
-Regression Analysis
-```
+Key decisions are recorded as ADRs in
+[`docs/architecture/architecture-decision-records/`](docs/architecture/architecture-decision-records)
+(modular monolith ADR-001, Redis queue ADR-002, plugin isolation ADR-004, trace store ADR-005).
 
 ---
 
-# 4. Domain Architecture
-
-This is where I want Aegis to be strong.
+## Repository layout
 
 ```text
-AEGIS
-│
-├── Identity
-│
-├── Projects
-│
-├── AI Targets
-│
-├── Datasets
-│
-├── Experiments
-│
-├── Execution
-│
-├── Tracing
-│
-├── Evaluation
-│
-├── Analysis
-│
-├── Regression
-│
-└── Reporting
+src/aegis/               Python package (modular monolith)
+  domain/                layer 01 · pure business logic, stdlib only
+  application/           layer 02 · use-cases & orchestration
+  interface/             layer 03 · REST/gRPC boundaries
+  infrastructure/        layer 04 · PostgreSQL/Redis adapters
+  execution/             layer 05 · workers & scheduling
+  evaluation/            layer 06 · evaluator plugins
+  analysis/              layer 07 · trends & root-cause
+  policy/                layer 08 · gates & no-score-without-evidence
+  evidence/              layer 09 · evidence graph & auditability
+  observability/         layer 10 · OTel tracing/telemetry
+  security/              layer 11 · authorization & audit
+scripts/                 automation (purity gate, docs validation)
+tests/unit/domain/       domain unit tests (marked unit)
+docs/                    100+ files - requirements, ADRs, layers, CI/CD
+.github/workflows/ci.yml CI: ruff · format · mypy · purity · docs · pytest+cov
 ```
 
-Do not create 50 microservices.
-
-Start as a **modular monolith**.
+**Domain purity constraint** (layer 01): domain code may import only the Python
+standard library and its own submodules — no HTTP/SQL/Redis/FastAPI/Django/Celery or
+provider SDKs. Enforced by `scripts/check_domain_purity.py`.
 
 ---
 
-# 5. Core Domain Entities
+## Branching model
 
-```mermaid
-erDiagram
-
-    ORGANIZATION ||--o{ PROJECT : owns
-
-    PROJECT ||--o{ TARGET : contains
-    PROJECT ||--o{ DATASET : contains
-    PROJECT ||--o{ EXPERIMENT : contains
-
-    TARGET ||--o{ TARGET_VERSION : has
-
-    DATASET ||--o{ TEST_CASE : contains
-
-    EXPERIMENT }o--|| TARGET_VERSION : evaluates
-
-    EXPERIMENT ||--o{ EVALUATION_RUN : creates
-
-    EVALUATION_RUN ||--o{ TEST_EXECUTION : contains
-
-    TEST_EXECUTION ||--o{ TRACE : generates
-
-    TEST_EXECUTION ||--o{ METRIC_RESULT : produces
-
-    EVALUATION_RUN ||--o{ REPORT : generates
-```
-
-The critical entity is:
-
-## `TestExecution`
-
-```text
-TestExecution
-│
-├── Test Case
-├── Target Version
-├── Input
-├── Output
-├── Trace
-├── Metrics
-├── Cost
-├── Latency
-└── Status
-```
-
-This becomes the center of your debugging system.
+| Branch | Purpose |
+|--------|---------|
+| `main` | integration - everything merged here |
+| `requirements`, `architecture`, `data`, `api`, `development`, `testing`, `implementation`, `operations`, `ci-cd` | review tracks per docs area |
+| `layers/00…11-*` | per-layer sub-branches (named `layers/*` because git refs cannot nest under the existing `development` branch) |
 
 ---
 
-# 6. Trace Model
+## Productivity rules (how we work)
 
-A normal observability system stores:
-
-```text
-Request → Response
-```
-
-That is insufficient for AI.
-
-Aegis needs:
-
-```text
-Trace
-│
-├── User Input
-│
-├── LLM Generation
-│      ├── Model
-│      ├── Prompt
-│      ├── Completion
-│      ├── Tokens
-│      └── Latency
-│
-├── Retrieval
-│      ├── Query
-│      ├── Retrieved Documents
-│      └── Scores
-│
-├── Tool Call
-│      ├── Tool Name
-│      ├── Arguments
-│      ├── Result
-│      └── Error
-│
-├── Agent Decision
-│
-└── Final Response
-```
-
-Internally:
-
-```text
-Trace
- └── Span
-      └── Span
-           └── Span
-```
-
-Example:
-
-```text
-User Request
-    │
-    └── Agent Run
-         │
-         ├── LLM Call
-         │
-         ├── Retrieval
-         │
-         │     └── Vector Search
-         │
-         ├── Tool Call
-         │
-         └── LLM Call
-```
-
-This should follow an **OpenTelemetry-compatible model** where practical.
+- **Mode 1 — build:** write code phase-by-phase, matching
+  [`docs/implementation/implementation-order.md`](docs/implementation/implementation-order.md).
+  Documentation is the source of truth; every change stays consistent with docs and
+  `grilling.md`.
+- **Mode 2 — tech:** adopt/adapt patterns from the grilling doc (isolation, evidence,
+  cheap failures, no-leakage set hierarchy, action gates, countermeasure codification).
+- **Mode 3 — lock:** when behavior is verified, lock it into tests + docs + ADRs.
+- **Mode 4 — execution & score:** commit, push to the right branch, and report what
+  executed + what scored/succeeded.
 
 ---
 
-# 7. Evaluation Engine
-
-Don't hard-code metrics.
-
-Metrics need a plugin architecture.
+## Relationship with ancient
 
 ```text
-Metric
-│
-├── Metric Definition
-│
-├── Input Requirements
-│
-├── Evaluator
-│
-└── Result
+ANCIENT         builds & runs AI systems
+AEGIS           measures & verifies AI systems
 ```
 
-Interface conceptually:
-
-```text
-Evaluator
-
-evaluate(
-    execution,
-    context
-)
-
-→ MetricResult
-```
-
-Example metric:
-
-```text
-ToolCallAccuracy
-```
-
-Input:
-
-```text
-Expected Tool: search_database
-
-Actual Tool: search_database
-```
-
-Result:
-
-```text
-Score: 1.0
-```
-
-Another:
-
-```text
-StructuredOutputValidity
-```
-
-Another:
-
-```text
-TaskSuccess
-```
-
-Another:
-
-```text
-Faithfulness
-```
-
----
-
-# 8. Metric Categories
-
-## Deterministic
-
-No AI judge required.
-
-```text
-JSON validity
-Exact Match
-Schema Validation
-Tool Call Accuracy
-Latency
-Cost
-Error Rate
-```
-
----
-
-## Semantic
-
-```text
-Semantic Similarity
-Answer Relevance
-```
-
-Uses embedding models.
-
----
-
-## LLM-as-Judge
-
-```text
-Instruction Following
-Answer Quality
-Helpfulness
-Reasoning Quality
-```
-
-Important design:
-
-```text
-Metric Result
-├── score
-├── reason
-├── judge_model
-├── prompt_version
-└── confidence
-```
-
-Because an LLM judge itself is not objective truth.
-
-Aegis should preserve how a score was generated.
-
----
-
-# 9. Agent Evaluation
-
-This is where Aegis becomes valuable.
-
-```text
-Task
- │
- ▼
-Agent
- │
- ├── Planning
- │
- ├── LLM Call
- │
- ├── Tool Call
- │
- ├── Tool Call
- │
- └── Final Answer
-```
-
-Metrics:
-
-```text
-Task Success Rate
-Tool Selection Accuracy
-Tool Argument Accuracy
-Loop Rate
-Step Count
-Recovery Rate
-Planning Efficiency
-```
-
-Example:
-
-```text
-Expected:
-
-search_customer
-        ↓
-get_orders
-        ↓
-refund_order
-
-Actual:
-
-search_customer
-        ↓
-get_orders
-        ↓
-search_customer
-        ↓
-search_customer
-        ↓
-search_customer
-
-Result:
-
-Task Failed
-Loop Detected
-```
-
----
-
-# 10. Regression Engine
-
-This is one of the strongest parts.
-
-You have:
-
-```text
-Experiment A
-ANCIENT v0.3
-```
-
-Then:
-
-```text
-Experiment B
-ANCIENT v0.4
-```
-
-Aegis compares:
-
-```text
-Metric                v0.3       v0.4
-
-Task Success          87%        91%  ↑
-
-Tool Accuracy         94%        96%  ↑
-
-Latency               1.8s       2.5s  ↓
-
-Cost                  $0.012     $0.019 ↓
-```
-
-But aggregate metrics are not enough.
-
-We need:
-
-```text
-Per Test Comparison
-```
-
-```text
-Test #184
-
-v0.3:
-SUCCESS
-
-v0.4:
-FAILED
-
-Regression Detected
-```
-
-This is important.
-
----
-
-# 11. Failure Analysis Engine
-
-This should not pretend to magically know the root cause.
-
-Instead:
-
-```text
-Failure
-    │
-    ▼
-Failure Classification
-    │
-    ├── Model Failure
-    │
-    ├── Retrieval Failure
-    │
-    ├── Tool Failure
-    │
-    ├── Agent Loop
-    │
-    ├── Timeout
-    │
-    └── Validation Failure
-```
-
-Then:
-
-```text
-Failure Clustering
-```
-
-Example:
-
-```text
-127 Failures
-
-45 → Wrong Tool
-31 → Invalid Arguments
-24 → Retrieval Miss
-17 → Timeout
-10 → Unknown
-```
-
-This gives engineers actionable information.
-
----
-
-# 12. System Components
-
-## API
-
-```text
-FastAPI
-```
-
-Responsibilities:
-
-```text
-Projects
-Targets
-Datasets
-Experiments
-Reports
-```
-
----
-
-## Evaluation Orchestrator
-
-Responsible for:
-
-```text
-Create Jobs
-Schedule Workers
-Retry
-Timeout
-Cancel
-Aggregate Results
-```
-
-Initially:
-
-```text
-Redis
-+
-Celery / Dramatiq / ARQ
-```
-
-Don't use Kafka here unless you have a real reason.
-
-Kafka can be added later for high-scale event streams.
-
----
-
-## Execution Workers
-
-These are isolated.
-
-```text
-Worker
- │
- ├── Load Test Case
- │
- ├── Invoke Target
- │
- ├── Collect Trace
- │
- └── Persist Execution
-```
-
-Why isolated?
-
-Because targets can:
-
-```text
-Crash
-Timeout
-Loop
-Consume Resources
-```
-
----
-
-# 13. Storage Architecture
-
-```text
-                    AEGIS
-                      │
-       ┌──────────────┼──────────────┐
-       ▼              ▼              ▼
-
-   PostgreSQL       Redis         Object Storage
-
-   Metadata         Queue         Large Artifacts
-   Results          Cache         Datasets
-   Config           Locks         Reports
-```
-
-PostgreSQL:
-
-```text
-Users
-Projects
-Targets
-Experiments
-Runs
-Metrics
-Results
-```
-
-Object storage:
-
-```text
-Large Datasets
-Trace Payloads
-Reports
-Artifacts
-```
-
-Redis:
-
-```text
-Queue
-Caching
-Distributed Locks
-Rate Limits
-```
-
----
-
-# 14. SDK Design
-
-Aegis needs an SDK eventually.
-
-Example:
-
-```python
-from aegis import Aegis
-
-aegis = Aegis()
-
-with aegis.trace("customer_support"):
-    result = agent.run(message)
-```
-
-Then:
-
-```text
-Agent
-  │
-  ▼
-Aegis SDK
-  │
-  ▼
-Trace Collector
-  │
-  ▼
-Aegis Backend
-```
-
-But:
-
-## Do not start with the SDK.
-
-First build:
-
-```text
-REST Target
-+
-Evaluation Engine
-+
-Experiment System
-```
-
-Then SDK.
-
----
-
-# 15. Multi-Tenant Architecture
-
-Since this could become SaaS:
-
-```text
-Organization
-      │
-      ▼
-Project
-      │
-      ├── Targets
-      ├── Datasets
-      └── Experiments
-```
-
-Every important record has:
-
-```text
-organization_id
-project_id
-```
-
-Don't add complex RBAC initially.
-
-Start:
-
-```text
-Owner
-Admin
-Member
-Viewer
-```
-
-Enough.
-
----
-
-# 16. MVP Architecture
-
-This is what I would actually build first.
-
-```mermaid
-graph LR
-
-    UI[Next.js]
-
-    UI --> API[FastAPI]
-
-    API --> PG[(PostgreSQL)]
-
-    API --> REDIS[(Redis)]
-
-    API --> ORCH[Evaluation Orchestrator]
-
-    ORCH --> WORKERS[Execution Workers]
-
-    WORKERS --> TARGET[AI Target]
-
-    WORKERS --> PG
-
-    WORKERS --> METRICS[Metric Engine]
-
-    METRICS --> PG
-```
-
-No:
-
-```text
-Kubernetes
-Kafka
-Microservices
-Service Mesh
-10 databases
-```
-
-for the MVP.
-
-That would be architecture theater.
-
----
-
-# MVP Features
-
-## Phase 1
-
-```text
-Projects
-Targets
-Datasets
-Experiments
-```
-
-## Phase 2
-
-```text
-LLM Target Execution
-Evaluation Runs
-Latency
-Cost
-Exact Match
-JSON Validation
-Semantic Similarity
-```
-
-## Phase 3
-
-```text
-Agent Tracing
-Tool Evaluation
-Failure Analysis
-```
-
-## Phase 4
-
-```text
-Experiment Comparison
-Regression Detection
-Reports
-```
-
-## Phase 5
-
-```text
-SDK
-Production Observability
-CI/CD Integration
-```
-
----
-
-# The Relationship with Ancient
-
-This is extremely important:
-
-```text
-                  ┌─────────────┐
-                  │   ANCIENT   │
-                  │             │
-                  │ Build & Run │
-                  │ AI Systems  │
-                  └──────┬──────┘
-                         │
-                         │
-                         ▼
-                  ┌─────────────┐
-                  │    AEGIS    │
-                  │             │
-                  │ Measure &   │
-                  │ Verify AI   │
-                  └─────────────┘
-```
-
-Ancient asks:
-
-> How do we build intelligent AI agents?
-
-Aegis asks:
-
-> How do we know those agents actually work?
-
-That is why the two projects together would be powerful.
-
-## My final recommendation
-
-Before writing any code, I would lock these boundaries:
-
-```text
-Aegis WILL do:
-✓ Evaluation
-✓ Regression testing
-✓ AI tracing
-✓ Failure analysis
-✓ Reliability measurement
-
-Aegis WILL NOT initially:
-✗ Build agents
-✗ Be an LLM gateway
-✗ Be a RAG framework
-✗ Be a generic observability platform
-✗ Try to replace every existing AI tool
-```
-
-That boundary is what keeps the project from becoming another unfinished giant architecture.
-
-**The next step should be turning this into a real Arc42-style Software Architecture Document plus a repository structure and database schema.**
+The two projects are designed to be used together — Aegis turns Ancient's systems
+into continuously measured, regression-checked products.
+
+Detailed product design lives in the docs (start at
+[`docs/README.md`](docs/README.md)) and the original grilling notes in
+[`grilling.md`](grilling.md).
