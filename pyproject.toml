@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aegis"
+version = "0.1.0"
+description = "AI Evaluation, Reliability & Observability Platform"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: fast pure tests, no external services",
+    "integration: requires PostgreSQL/Redis containers",
+    "contract: contract parity across boundaries",
+    "e2e: full end-to-end scenarios",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["docs", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src"]
+ignore_missing_imports = true
+no_implicit_optional = true
