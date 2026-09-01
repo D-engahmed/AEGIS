@@ -65,6 +65,17 @@ def run_traces(
             "execution_id": t.execution_id,
             "span_count": len(t.spans),
             "preserved_at": t.preserved_at,
+            "spans": [
+                {
+                    "span_id": s.span_id,
+                    "name": s.name,
+                    "status": s.status.value,
+                    "start_time": s.start_time,
+                    "end_time": s.end_time,
+                    "attributes": dict(s.attributes),
+                }
+                for s in t.spans
+            ],
         }
         for t in records
     ]

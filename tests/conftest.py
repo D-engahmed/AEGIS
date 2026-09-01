@@ -152,6 +152,8 @@ def make_harness(clock: Clock):
         timeouts: TimeoutPolicy | None = None,
         sleep=None,
         clock: Clock | None = None,
+        tracer_provider=None,
+        run_gates=None,
     ):
         at = clock or _clock
         target = target or ScriptedTarget()
@@ -176,6 +178,8 @@ def make_harness(clock: Clock):
             retry=retry or RetryPolicy(),
             timeouts=timeouts or TimeoutPolicy(),
             sleep=sleep or (lambda _seconds: None),
+            tracer_provider=tracer_provider,
+            run_gates=run_gates,
         )
         return SimpleNamespace(
             engine=engine,

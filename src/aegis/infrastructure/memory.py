@@ -31,6 +31,7 @@ from aegis.evidence.models import (
     ProvenanceSnapshot,
 )
 from aegis.execution.cancellation import CancellationToken
+from aegis.policy.models import RunGateReport
 
 
 class MemoryExperimentRepository:
@@ -235,6 +236,24 @@ class MemoryProvenanceIndex:
         return self._by_execution[execution_id]
 
 
+class MemoryRunGateStore:
+    """In-memory store for persisted run gate reports (override replaces)."""
+
+    def __init__(self) -> None:
+        self._reports: dict[str, RunGateReport] = {}
+
+    def save(self, report: RunGateReport) -> None:
+        self._reports[report.run_id] = report
+
+    def load(self, run_id: str) -> RunGateReport:
+        if run_id not in self._reports:
+            raise NotFound(f"gate report for run {run_id!r} not found")
+        return self._reports[run_id]
+
+    def exists(self, run_id: str) -> bool:
+        return run_id in self._reports
+
+
 class MemoryArtifactManager:
     """In-memory object storage: content-hashes payloads, keeps references."""
 
@@ -287,5 +306,6 @@ __all__ = [
     "MemoryProvenanceIndex",
     "MemoryQueue",
     "MemoryResultRepository",
+    "MemoryRunGateStore",
     "MemoryRunRepository",
 ]

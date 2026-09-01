@@ -191,4 +191,43 @@ def test_exporter_shutdown_clears():
     assert exporter.spans == []
 
 
+def test_evaluation_tracer_provider_preserves_through_flush():
+    from aegis.observability.run_tracing import EvaluationTracerProvider
+
+    provider = EvaluationTracerProvider()
+    tracer = provider.get_tracer("eval")
+    span = tracer.start_span("target.invoke", run_id="run:1")
+    span.set_attribute("dim/latency", 0.4)
+    span.end("ok")
+
+    trace_id = tracer.flush("run:1")
+    assert trace_id is not None
+    records = provider.preservation().traces_for_run("run:1")
+    assert len(records) == 1
+    assert records[0].trace_id == trace_id
+    assert records[0].spans[0].name == "target.invoke"
+    assert records[0].spans[0].attributes["dim/latency"] == 0.4
+
+
+def test_evaluation_run_span_carries_correlation_attributes():
+    from aegis.observability.run_tracing import EvaluationTracerProvider
+
+    provider = EvaluationTracerProvider()
+    tracer = provider.get_tracer("eval")
+    tracer.set_execution("exe:9")
+    span = tracer.start_span("evaluate", run_id="run:1")
+    assert span._builder.attributes[SpanAttributes.RUN_ID] == "run:1"
+    assert span._builder.attributes[SpanAttributes.EXECUTION_ID] == "exe:9"
+
+
+def test_noop_tracer_does_nothing():
+    from aegis.observability.run_tracing import noop_tracer
+
+    tracer = noop_tracer()
+    span = tracer.start_span("target.invoke")
+    span.set_attribute("a", 1)
+    span.end("ok")
+    assert tracer.flush("run:1") is None
+
+
 __all__ = []

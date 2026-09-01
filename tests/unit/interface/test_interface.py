@@ -325,4 +325,117 @@ def test_health_requires_auth(client: TestClient):
     assert response.status_code == 401
 
 
+def _seed_blocked_report(container: Container, run_id: str = "run:gate1") -> None:
+    from aegis.policy.models import (
+        GateDecision,
+        GateSeverity,
+        RunGateReport,
+        RunGateVerdict,
+        Verdict,
+    )
+
+    report = RunGateReport(
+        run_id=run_id,
+        verdict=RunGateVerdict.BLOCK,
+        decisions=(
+            GateDecision(
+                "policy/evidence-gate",
+                Verdict.FAIL,
+                "missing evidence",
+                GateSeverity.HIGH,
+            ),
+        ),
+        evaluated_at=container.clock.now(),
+    )
+    container.run_gate_store.save(report)
+
+
+def test_policy_verdict_endpoint(client: TestClient, owner_headers, container: Container):
+    _seed_blocked_report(container)
+    response = client.get("/policy/verdict/run:gate1", headers=owner_headers)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["verdict"] == "block"
+    assert body["overridden"] is False
+    assert [d["gate_id"] for d in body["decisions"]] == ["policy/evidence-gate"]
+
+
+def test_policy_verdict_missing(client: TestClient, owner_headers):
+    response = client.get("/policy/verdict/run:nope", headers=owner_headers)
+    assert response.status_code == 404
+
+
+def test_policy_override_clears_block(client: TestClient, owner_headers, container: Container):
+    _seed_blocked_report(container)
+    response = client.post(
+        "/policy/verdict/run:gate1/override",
+        headers=owner_headers,
+        json={"reason": "approved by review board"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["overridden"] is True
+    assert body["override"]["overridden_by"] == "alice"
+    assert body["override"]["reason"] == "approved by review board"
+
+    audit = client.get("/security/audit", headers=owner_headers)
+    assert any(entry["action"] == "gate.overridden" for entry in audit.json())
+
+
+def test_policy_override_refuses_unblocked(client: TestClient, owner_headers, container: Container):
+    from aegis.policy.models import (
+        GateDecision,
+        GateSeverity,
+        RunGateReport,
+        RunGateVerdict,
+        Verdict,
+    )
+
+    report = RunGateReport(
+        run_id="run:ok",
+        verdict=RunGateVerdict.PASS,
+        decisions=(GateDecision("policy/evidence-gate", Verdict.PASS, "ok", GateSeverity.INFO),),
+        evaluated_at=container.clock.now(),
+    )
+    container.run_gate_store.save(report)
+    response = client.post(
+        "/policy/verdict/run:ok/override",
+        headers=owner_headers,
+        json={"reason": "why"},
+    )
+    assert response.status_code == 409
+
+
+def test_policy_override_forbidden_for_viewer(
+    client: TestClient, non_owner_headers, container: Container
+):
+    _seed_blocked_report(container)
+    response = client.post(
+        "/policy/verdict/run:gate1/override",
+        headers=non_owner_headers,
+        json={"reason": "force"},
+    )
+    assert response.status_code == 403
+
+
+def test_policy_requires_auth(client: TestClient):
+    response = client.get("/policy/verdict/run:gate1")
+    assert response.status_code == 401
+
+
+def test_observability_trace_endpoint(client: TestClient, owner_headers, container: Container):
+    tracer = container.evaluation_tracers.get_tracer("test")
+    tracer.start_span("target.invoke").end("ok")
+    tracer.flush("run:trace1")
+
+    response = client.get("/observability/traces/run:trace1", headers=owner_headers)
+    assert response.status_code == 200
+    records = response.json()
+    assert len(records) == 1
+    spans = records[0]["spans"]
+    assert spans
+    assert spans[0]["name"] == "target.invoke"
+    assert records[0]["run_id"] == "run:trace1"
+
+
 __all__ = []

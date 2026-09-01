@@ -148,6 +148,26 @@ class PiiRedactOut(ApiModel):
     pii_spans: list[dict[str, Any]]
 
 
+class GateDecisionOut(ApiModel):
+    gate_id: str
+    verdict: str
+    reason: str
+    severity: str
+
+
+class RunVerdictOut(ApiModel):
+    run_id: str
+    verdict: str
+    decisions: list[GateDecisionOut]
+    evaluated_at: datetime
+    overridden: bool
+    override: dict[str, Any] | None = None
+
+
+class GateOverrideIn(ApiModel):
+    reason: str
+
+
 __all__ = [
     "ApiModel",
     "ArtifactRefOut",
@@ -155,6 +175,8 @@ __all__ = [
     "ExperimentCreateIn",
     "ExperimentOut",
     "ExperimentSnapshotIn",
+    "GateDecisionOut",
+    "GateOverrideIn",
     "HealthCheckOut",
     "HealthSummaryOut",
     "MetricResultOut",
@@ -163,6 +185,7 @@ __all__ = [
     "ProvenanceOut",
     "RunOut",
     "RunSubmitIn",
+    "RunVerdictOut",
     "TokenOut",
     "TrendPointOut",
     "TrendReportOut",

@@ -28,6 +28,7 @@ from aegis.application.ports import (
     TargetInvocationRequest,
     summarize_evidence,
 )
+from aegis.application.run_tracing import RunTracerProvider
 from aegis.domain import (
     EvidenceReference,
     FailureCode,
@@ -47,6 +48,11 @@ from aegis.domain.execution import (
 from aegis.domain.time import Clock
 from aegis.execution.retry import RetryPolicy
 from aegis.execution.timeout import TimeoutPolicy
+from aegis.observability.models import (
+    MetricDefinitions,
+    SpanAttributes,
+)
+from aegis.observability.run_tracing import noop_tracer
 
 
 def fingerprint(value: object) -> str:
@@ -82,6 +88,8 @@ class ExecutionEngine:
         retry: RetryPolicy,
         timeouts: TimeoutPolicy,
         sleep: Callable[[float], None] = time.sleep,
+        tracer_provider: RunTracerProvider | None = None,
+        run_gates=None,
     ) -> None:
         self._client = client
         self._gateway = gateway
@@ -94,6 +102,8 @@ class ExecutionEngine:
         self._retry = retry
         self._timeouts = timeouts
         self._sleep = sleep
+        self._tracer_provider = tracer_provider
+        self._run_gates = run_gates
 
     def run(self, run_id: str) -> Run:
         run = self._runs.load(run_id)
@@ -121,6 +131,10 @@ class ExecutionEngine:
         completed: list[ExecutionRecord] = []
         fatal: FailureInfo | None = None
 
+        tracer = noop_tracer()
+        if self._tracer_provider is not None:
+            tracer = self._tracer_provider.get_tracer(f"run/{run.id}")
+
         for sequence, test_case in enumerate(dataset.test_cases):
             if self._cancellations.is_cancelled(run.id):
                 fatal = FailureInfo(
@@ -145,17 +159,29 @@ class ExecutionEngine:
             )
             execution = execution.start(self._clock.now())
             self._executions.save(execution)
+            if hasattr(tracer, "set_execution"):
+                tracer.set_execution(execution.id)
+            span = tracer.start_span("target.invoke")
+            span.set_attribute(SpanAttributes.TARGET_VERSION_ID, target.id)
+            span.set_attribute(SpanAttributes.DATASET_VERSION_ID, dataset.id)
+            span.set_attribute("aegis.test.case.id", test_case.id)
 
-            result, used_retries = self._invoke_with_retry(
-                execution,
-                run,
-                target,
-                test_case,
-                target_deadline,
-                overall_deadline,
-            )
+            try:
+                result, used_retries = self._invoke_with_retry(
+                    execution,
+                    run,
+                    target,
+                    test_case,
+                    target_deadline,
+                    overall_deadline,
+                )
+            except Exception:
+                span.end("error")
+                raise
 
             if isinstance(result, FailureInfo):
+                span.set_attribute("aegis.failure.code", result.code.value)
+                span.end("error")
                 execution = execution.fail(result, self._clock.now())
                 self._executions.save(execution)
                 completed.append(execution)
@@ -166,6 +192,10 @@ class ExecutionEngine:
             execution = replace(execution, retries=used_retries)
             trace_id = outcome.trace_artifact_id or f"trace/{execution.id}"
             outcome = replace(outcome, trace_artifact_id=trace_id)
+            span.set_attribute(MetricDefinitions.TARGET_COST_USD, outcome.cost_usd)
+            span.set_attribute(SpanAttributes.LATENCY_MS, outcome.latency_ms)
+            span.set_attribute("aegis.trace.artifact.id", trace_id)
+            span.end("ok")
             execution = execution.succeed(
                 outcome,
                 self._clock.now(),
@@ -206,6 +236,12 @@ class ExecutionEngine:
             run = run.fail(fatal, summary, self._clock.now())
         run = replace(run, executions=tuple(ex.id for ex in completed))
         self._runs.save(run)
+
+        if tracer is not noop_tracer():
+            tracer.flush(run.id)
+        if self._run_gates is not None and run.status is RunStatus.SUCCEEDED:
+            results = self._results.list_for_run(run.id)
+            self._run_gates.evaluate(run, results)
         return run
 
     def _invoke_with_retry(

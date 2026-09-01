@@ -13,6 +13,7 @@ from aegis.analysis.comparison import WelchExperimentComparator
 from aegis.analysis.regression import WelchRegressionDetector
 from aegis.analysis.slicing import DimensionSlicer
 from aegis.analysis.trends import LinearTrendAnalyzer
+from aegis.application.run_gates import RunGateService
 from aegis.application.services import ExperimentService, RunService
 from aegis.domain.time import Clock, SystemClock
 from aegis.evidence.graph import InMemoryEvidenceGraph
@@ -26,12 +27,14 @@ from aegis.infrastructure.memory import (
     MemoryProvenanceIndex,
     MemoryQueue,
     MemoryResultRepository,
+    MemoryRunGateStore,
     MemoryRunRepository,
 )
 from aegis.observability.cost import InMemoryCostTracker
 from aegis.observability.health import HealthAggregator, StaticHealthCheck
 from aegis.observability.models import HealthStatus
 from aegis.observability.preservation import TracePreservationEngine
+from aegis.observability.run_tracing import EvaluationTracerProvider
 from aegis.observability.tracing import InMemoryExporter, InMemoryTracerProvider
 from aegis.security.audit import InMemorySecretsProvider, MemoryAuditLogger
 from aegis.security.auth import HmacTokenAuthProvider
@@ -65,6 +68,9 @@ class Container:
             self.clock,
         )
 
+        self.run_gate_store = MemoryRunGateStore()
+        self.run_gates = RunGateService(self.run_gate_store, self.clock)
+
         self.auth = HmacTokenAuthProvider(AUTH_SECRET)
         self.rbac = RBACPermissionChecker()
         self.audit = MemoryAuditLogger()
@@ -85,6 +91,7 @@ class Container:
 
         self.tracer_provider = InMemoryTracerProvider(InMemoryExporter())
         self.preservation = TracePreservationEngine()
+        self.evaluation_tracers = EvaluationTracerProvider(self.preservation)
         self.cost = InMemoryCostTracker()
         self.health = HealthAggregator(
             [

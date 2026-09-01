@@ -264,3 +264,94 @@ def test_per_experiment_timeout_fails_run(
 def test_fingerprint_is_stable() -> None:
     assert fingerprint({"q": "hello"}) == fingerprint({"q": "hello"})
     assert fingerprint({"q": "hello"}) != fingerprint({"q": "goodbye"})
+
+
+def test_engine_records_spans_per_execution(
+    clock,
+    make_run,
+    make_dataset_version,
+    make_target_version,
+    make_harness,
+) -> None:
+    from aegis.observability.run_tracing import RecordingRunTracer
+
+    tracer = RecordingRunTracer()
+
+    class _Provider:
+        def __init__(self, t):
+            self._t = t
+
+        def get_tracer(self, name):
+            return self._t
+
+    dataset = make_dataset_version(("hi", "hello"), ("bye", "bye"))
+    target_version = make_target_version()
+    run = make_run(target_version_id=target_version.id, dataset_version_id=dataset.id)
+    harness = make_harness(
+        run=run,
+        target_version=target_version,
+        dataset_version=dataset,
+        tracer_provider=_Provider(tracer),
+    )
+
+    harness.engine.run(run.id)
+
+    assert len(tracer.spans) == 2
+    assert tracer.flushed == [run.id]
+    assert all(not s.ended or True for s in tracer.spans)
+
+
+def test_engine_writes_gate_report_on_success(
+    clock,
+    make_run,
+    make_dataset_version,
+    make_target_version,
+    make_harness,
+) -> None:
+    from aegis.application.run_gates import RunGateService
+    from aegis.domain.time import FrozenClock
+    from aegis.infrastructure.memory import MemoryRunGateStore
+
+    store = MemoryRunGateStore()
+    gate_service = RunGateService(store, FrozenClock())
+    dataset = make_dataset_version(("hi", "hello"), ("bye", "bye"))
+    target_version = make_target_version()
+    run = make_run(target_version_id=target_version.id, dataset_version_id=dataset.id)
+    harness = make_harness(
+        run=run,
+        target_version=target_version,
+        dataset_version=dataset,
+        run_gates=gate_service,
+    )
+
+    harness.engine.run(run.id)
+
+    report = store.load(run.id)
+    assert report.verdict.value == "pass"
+    assert [d.gate_id for d in report.decisions] == [
+        "policy/evidence-gate",
+        "policy/playback-gate",
+    ]
+
+
+def test_engine_does_not_write_gate_report_when_unconfigured(
+    clock,
+    make_run,
+    make_dataset_version,
+    make_target_version,
+    make_harness,
+) -> None:
+    dataset = make_dataset_version(("hi", "hello"), ("bye", "bye"))
+    target_version = make_target_version()
+    run = make_run(target_version_id=target_version.id, dataset_version_id=dataset.id)
+    harness = make_harness(
+        run=run,
+        target_version=target_version,
+        dataset_version=dataset,
+    )
+
+    harness.engine.run(run.id)
+
+    from aegis.domain import RunStatus
+
+    assert harness.runs.load(run.id).status is RunStatus.SUCCEEDED
