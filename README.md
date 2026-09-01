@@ -30,8 +30,8 @@ those agents actually work?"* for anything ancient builds and runs.
 | 0 | Scaffold: packaging, layer layout, gates, CI | ✅ done |
 | 1 | Domain layer: tenancy, targets/versions (immutability), datasets (draft→lock), events, registry | ✅ done |
 | 2 | Application layer (services, ports, evaluation service) | ✅ done |
-| 3–5 | Interface, infrastructure adapters (memory/REST), execution engine+worker, evaluation plugins | ✅ partial (memory + REST adapters; Postgres/Redis adapters pending) |
-| 6–11 | Analysis, gates (policy), evidence, observability, security | ⏳ in progress (policy gates shipped; analysis/evidence/observability/security are stubs) |
+| 3–5 | Interface, infrastructure adapters (memory/REST), execution engine+worker, evaluation plugins | ✅ partial (FastAPI interface + memory/REST adapters; Postgres/Redis adapters pending) |
+| 6–11 | Analysis, gates (policy), evidence, observability, security | ✅ done (FastAPI interface wired; CI gates green) |
 
 The full roadmap is defined in [`docs/implementation/implementation-order.md`](docs/implementation/implementation-order.md)
 and traced against requirements in [`docs/requirements/`](docs/requirements).

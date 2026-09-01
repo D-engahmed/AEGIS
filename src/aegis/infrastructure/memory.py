@@ -7,7 +7,9 @@ per run. Nothing here may perform actual I/O.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable
+from datetime import UTC, datetime
 
 from aegis.application.ports import CancellationRegistry
 from aegis.domain import (
@@ -20,7 +22,14 @@ from aegis.domain import (
     Run,
     TargetVersion,
 )
+from aegis.domain.identifiers import new_id
 from aegis.domain.time import Clock
+from aegis.evidence.models import (
+    ArtifactReference,
+    ArtifactType,
+    EvidenceRecord,
+    ProvenanceSnapshot,
+)
 from aegis.execution.cancellation import CancellationToken
 
 
@@ -173,11 +182,109 @@ class MemoryQueue:
         return set(self._claimed)
 
 
+class MemoryEvidenceRepository:
+    """Write-once evidence records: duplicate persist is a conflict, no updates."""
+
+    def __init__(self) -> None:
+        self._items: dict[str, EvidenceRecord] = {}
+        self._by_run: dict[str, list[EvidenceRecord]] = {}
+        self._by_metric: dict[str, list[EvidenceRecord]] = {}
+
+    def persist(self, record: EvidenceRecord) -> None:
+        if record.id in self._items:
+            raise Conflict(f"evidence record {record.id!r} already persisted")
+        self._items[record.id] = record
+        self._by_run.setdefault(record.run_id, []).append(record)
+        self._by_metric.setdefault(record.metric_result_id, []).append(record)
+
+    def get(self, evidence_id: str) -> EvidenceRecord:
+        try:
+            return self._items[evidence_id]
+        except KeyError:
+            raise NotFound(f"evidence record {evidence_id!r} not found") from None
+
+    def list_for_run(self, run_id: str) -> list[EvidenceRecord]:
+        return list(self._by_run.get(run_id, []))
+
+    def list_for_metric_result(self, metric_result_id: str) -> list[EvidenceRecord]:
+        return list(self._by_metric.get(metric_result_id, []))
+
+    def exists(self, evidence_id: str) -> bool:
+        return evidence_id in self._items
+
+
+class MemoryProvenanceIndex:
+    """Executes provenance_for_result / provenance_for_execution lookups."""
+
+    def __init__(self) -> None:
+        self._by_execution: dict[str, ProvenanceSnapshot] = {}
+        self._by_metric: dict[str, ProvenanceSnapshot] = {}
+
+    def index(self, record: EvidenceRecord) -> None:
+        self._by_execution[record.execution_id] = record.provenance
+        self._by_metric[record.metric_result_id] = record.provenance
+
+    def provenance_for_result(self, metric_result_id: str) -> ProvenanceSnapshot:
+        if metric_result_id not in self._by_metric:
+            raise NotFound(f"no provenance indexed for metric result {metric_result_id!r}")
+        return self._by_metric[metric_result_id]
+
+    def provenance_for_execution(self, execution_id: str) -> ProvenanceSnapshot:
+        if execution_id not in self._by_execution:
+            raise NotFound(f"no provenance indexed for execution {execution_id!r}")
+        return self._by_execution[execution_id]
+
+
+class MemoryArtifactManager:
+    """In-memory object storage: content-hashes payloads, keeps references."""
+
+    def __init__(self) -> None:
+        self._blobs: dict[str, bytes] = {}
+        self._references: dict[str, ArtifactReference] = {}
+
+    def store(
+        self,
+        artifact_type: ArtifactType,
+        content: bytes,
+        metadata: dict,
+    ) -> ArtifactReference:
+        digest = hashlib.sha256(content).hexdigest()
+        reference = ArtifactReference(
+            artifact_id=new_id("art"),
+            artifact_type=artifact_type,
+            storage_key=f"{artifact_type.value}/{digest}",
+            content_hash=digest,
+            size_bytes=len(content),
+            content_type=metadata.get("content_type", "application/octet-stream"),
+            created_at=metadata.get("created_at") or datetime.now(UTC),
+        )
+        self._blobs[reference.artifact_id] = content
+        self._references[reference.artifact_id] = reference
+        return reference
+
+    def retrieve(self, artifact_id: str) -> bytes:
+        if artifact_id not in self._blobs:
+            raise NotFound(f"artifact {artifact_id!r} not found")
+        return self._blobs[artifact_id]
+
+    def get_reference(self, artifact_id: str) -> ArtifactReference:
+        if artifact_id not in self._references:
+            raise NotFound(f"artifact {artifact_id!r} not found")
+        return self._references[artifact_id]
+
+    def delete(self, artifact_id: str) -> None:
+        self._blobs.pop(artifact_id, None)
+        self._references.pop(artifact_id, None)
+
+
 __all__ = [
     "InMemoryCancellationRegistry",
     "InMemoryDataCatalog",
+    "MemoryArtifactManager",
+    "MemoryEvidenceRepository",
     "MemoryExecutionRepository",
     "MemoryExperimentRepository",
+    "MemoryProvenanceIndex",
     "MemoryQueue",
     "MemoryResultRepository",
     "MemoryRunRepository",
