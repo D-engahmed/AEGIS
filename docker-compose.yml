@@ -1,0 +1,22 @@
+# AEGIS deployment compose.
+#
+# NOTE: the execution engine's production stores (PostgreSQL for records,
+# Redis for the job queue, object storage for evidence artifacts) do not yet
+# have adapters implemented in this release. The `aegis` service runs the
+# packaged, health-checked image standalone. Supporting services are declared
+# here as the documented topology target; wire their adapters in as they ship.
+services:
+  aegis:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aegis:${AEGIS_TAG:-latest}
+    environment:
+      AEGIS_ENV: production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "aegis-entrypoint", "probe"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

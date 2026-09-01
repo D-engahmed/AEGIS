@@ -7,7 +7,9 @@ name = "aegis"
 version = "0.1.0"
 description = "AI Evaluation, Reliability & Observability Platform"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "httpx>=0.27",
+]
 
 [project.optional-dependencies]
 dev = [

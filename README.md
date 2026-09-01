@@ -29,7 +29,9 @@ those agents actually work?"* for anything ancient builds and runs.
 |-------|-------|-------|
 | 0 | Scaffold: packaging, layer layout, gates, CI | ✅ done |
 | 1 | Domain layer: tenancy, targets/versions (immutability), datasets (draft→lock), events, registry | ✅ done |
-| 2–5 | Application, interface, infrastructure, execution, evaluation, analysis… | ⏳ phased build (see Roadmap) |
+| 2 | Application layer (services, ports, evaluation service) | ✅ done |
+| 3–5 | Interface, infrastructure adapters (memory/REST), execution engine+worker, evaluation plugins | ✅ partial (memory + REST adapters; Postgres/Redis adapters pending) |
+| 6–11 | Analysis, gates (policy), evidence, observability, security | ⏳ in progress (policy gates shipped; analysis/evidence/observability/security are stubs) |
 
 The full roadmap is defined in [`docs/implementation/implementation-order.md`](docs/implementation/implementation-order.md)
 and traced against requirements in [`docs/requirements/`](docs/requirements).
@@ -53,6 +55,47 @@ python -m venv .venv
 ```
 
 Unit tests are marked `unit` (fast, pure, no external services).
+
+---
+
+## Deploy to a server (Docker)
+
+The repo ships a production image (`Dockerfile`), a compose file, and a CI
+deploy workflow. It is ready to be built and run on a Linux VPS.
+
+Local build and smoke test:
+
+```bash
+docker build -t aegis:latest .
+docker run --rm aegis:latest probe    # -> aegis 0.1.0: import ok, N evaluators registered
+```
+
+Compose (fastest way to stand it up on a server):
+
+```bash
+docker compose up -d --build
+```
+
+Automatic deploy on every `main` push is wired in
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml): it SSHes to the
+VPS, refreshes the repo, and runs `docker compose up -d --build`. Configure
+these repository secrets under **Settings → Secrets → Actions**:
+
+| Secret | Purpose |
+|--------|---------|
+| `VPS_HOST` | server hostname/IP |
+| `VPS_USER` | SSH user with docker access |
+| `VPS_PORT` | SSH port (default `22`) |
+| `VPS_SSH_KEY` | SSH private key (ed25519 or RSA) |
+
+Optional `AEGIS_TAG` and `AEGIS_APP_DIR` (default `/opt/aegis`) can be set as
+workflow or environment variables. See `docs/ci-cd/deployment-strategy.md` for
+the full staged-rollout and rollback policy.
+
+> **Production note:** the engine's real stores — PostgreSQL (records), Redis
+> (job queue), object storage (evidence) — do not yet have adapters in this
+> release. The image runs the packaged, health-checked package standalone. Wire
+> the store adapters in as they ship in the infrastructure layer.
 
 ---
 
@@ -99,7 +142,10 @@ src/aegis/               Python package (modular monolith)
 scripts/                 automation (purity gate, docs validation)
 tests/unit/domain/       domain unit tests (marked unit)
 docs/                    100+ files - requirements, ADRs, layers, CI/CD
-.github/workflows/ci.yml CI: ruff · format · mypy · purity · docs · pytest+cov
+Dockerfile               production image
+docker-compose.yml       server deployment
+docker/entrypoint.sh     container entrypoint (probe/version)
+.github/workflows/       ci.yml (gates) + deploy.yml (VPS deploy)
 ```
 
 **Domain purity constraint** (layer 01): domain code may import only the Python
