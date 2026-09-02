@@ -217,7 +217,12 @@ class ExecutionEngine:
                 test_case.id,
                 target,
                 run.snapshot.evaluator_version_ids,
-                dict(run.snapshot.settings),
+                {
+                    **dict(run.snapshot.settings),
+                    **dict(test_case.metadata),
+                    "input": test_case.input,
+                    "expected": test_case.expected,
+                },
             )
             self._results.persist(metrics)
 

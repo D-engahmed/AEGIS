@@ -14,6 +14,7 @@ from aegis.analysis.regression import WelchRegressionDetector
 from aegis.analysis.slicing import DimensionSlicer
 from aegis.analysis.trends import LinearTrendAnalyzer
 from aegis.application.run_gates import RunGateService
+from aegis.application.runner import EvaluationRunner
 from aegis.application.services import ExperimentService, RunService
 from aegis.domain.time import Clock, SystemClock
 from aegis.evidence.graph import InMemoryEvidenceGraph
@@ -82,6 +83,21 @@ class Container:
         self.provenance = MemoryProvenanceIndex()
         self.artifacts = MemoryArtifactManager()
         self.evidence_graph = InMemoryEvidenceGraph()
+
+        from aegis.application.evaluation import EvaluationService
+
+        self.runner = EvaluationRunner(
+            self.clock,
+            experiments=self.experiments,
+            runs=self.runs,
+            executions=self.executions,
+            results=self.results,
+            catalog=self.catalog,
+            cancellations=self.cancellations,
+            queue=self.queue,
+            evidence=self.evidence_repository,
+            gateway=EvaluationService(self.clock),
+        )
 
         self.failure_classifier = CategoryFailureClassifier()
         self.comparator = WelchExperimentComparator()
