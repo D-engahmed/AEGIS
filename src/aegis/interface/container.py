@@ -37,6 +37,7 @@ from aegis.observability.models import HealthStatus
 from aegis.observability.preservation import TracePreservationEngine
 from aegis.observability.run_tracing import EvaluationTracerProvider
 from aegis.observability.tracing import InMemoryExporter, InMemoryTracerProvider
+from aegis.policy.application import Gate
 from aegis.security.audit import InMemorySecretsProvider, MemoryAuditLogger
 from aegis.security.auth import HmacTokenAuthProvider
 from aegis.security.pii import DefaultClassificationAnnotator, RegexPIIDetector
@@ -48,7 +49,12 @@ AUTH_SECRET = "dev-only-secret-change-me"
 class Container:
     """Holds every collaborator the HTTP application needs."""
 
-    def __init__(self, clock: Clock | None = None) -> None:
+    def __init__(
+        self,
+        clock: Clock | None = None,
+        *,
+        gates: tuple[Gate, ...] = (),
+    ) -> None:
         self.clock = clock or SystemClock()
 
         self.experiments = MemoryExperimentRepository()
@@ -70,7 +76,7 @@ class Container:
         )
 
         self.run_gate_store = MemoryRunGateStore()
-        self.run_gates = RunGateService(self.run_gate_store, self.clock)
+        self.run_gates = RunGateService(self.run_gate_store, self.clock, gates=gates)
 
         self.auth = HmacTokenAuthProvider(AUTH_SECRET)
         self.rbac = RBACPermissionChecker()
@@ -97,6 +103,7 @@ class Container:
             queue=self.queue,
             evidence=self.evidence_repository,
             gateway=EvaluationService(self.clock),
+            run_gates=self.run_gates,
         )
 
         self.failure_classifier = CategoryFailureClassifier()

@@ -26,6 +26,7 @@ from aegis.application.ports import (
     RunRepository,
     TargetClient,
 )
+from aegis.application.run_gates import RunGateService
 from aegis.domain import (
     DatasetVersion,
     Experiment,
@@ -74,6 +75,7 @@ class EvaluationRunner:
         retry: RetryPolicy | None = None,
         timeouts: TimeoutPolicy | None = None,
         run_gate_store: RunGateStore | None = None,
+        run_gates: RunGateService | None = None,
         sleep=None,
     ) -> None:
         self._clock = clock
@@ -89,6 +91,7 @@ class EvaluationRunner:
         self._retry = retry or RetryPolicy()
         self._timeouts = timeouts or TimeoutPolicy()
         self._run_gate_store = run_gate_store
+        self._run_gates = run_gates
         self._sleep = sleep or (lambda _seconds: None)
 
     def engine(self, client: TargetClient, run_gates=None) -> ExecutionEngine:
@@ -105,7 +108,7 @@ class EvaluationRunner:
             retry=self._retry,
             timeouts=self._timeouts,
             sleep=self._sleep,
-            run_gates=run_gates,
+            run_gates=run_gates if run_gates is not None else self._run_gates,
         )
 
     def run(
