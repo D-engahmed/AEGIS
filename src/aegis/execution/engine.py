@@ -182,6 +182,7 @@ class ExecutionEngine:
             if isinstance(result, FailureInfo):
                 span.set_attribute("aegis.failure.code", result.code.value)
                 span.end("error")
+                execution = replace(execution, retries=used_retries)
                 execution = execution.fail(result, self._clock.now())
                 self._executions.save(execution)
                 completed.append(execution)
@@ -304,6 +305,7 @@ class ExecutionEngine:
                 self._sleep(self._retry.delay_for(attempt))
                 attempt += 1
                 active = active.retried()
+                active = active.start(self._clock.now())
                 self._executions.save(active)
             except Exception as error:  # noqa: BLE001 — adapter boundary is opaque to the engine
                 return (
