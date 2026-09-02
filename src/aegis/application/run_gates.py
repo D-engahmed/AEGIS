@@ -21,18 +21,24 @@ from aegis.policy.ports import RunGateStore
 class RunGateService:
     """Commands for evaluating runs against policy and recording overrides."""
 
-    def __init__(self, store: RunGateStore, clock: Clock) -> None:
+    def __init__(
+        self,
+        store: RunGateStore,
+        clock: Clock,
+        gates: tuple[Gate, ...] = (),
+    ) -> None:
         self._store = store
         self._clock = clock
+        self._gates = gates
 
     def evaluate(
         self,
         run,
         results: list,
         *,
-        gates: tuple[Gate, ...] = (),
+        gates: tuple[Gate, ...] | None = None,
     ) -> RunGateReport:
-        report = evaluate_run_gates(run, results, gates=gates)
+        report = evaluate_run_gates(run, results, gates=self._gates if gates is None else gates)
         self._store.save(report)
         return report
 
