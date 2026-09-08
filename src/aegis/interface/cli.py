@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 
@@ -30,6 +31,8 @@ from aegis.domain.targets import (
 )
 from aegis.infrastructure.rest_target import RestTargetClient
 from aegis.interface.container import Container
+from aegis.policy.application import Gate, ThresholdGate
+from aegis.policy.models import GateSeverity
 
 
 def _load_dataset(cli: Container, source: str, label: str):
@@ -77,6 +80,47 @@ def _rest_client(target_version) -> RestTargetClient:
     return RestTargetClient(base_url, invoke_path=invoke_path, headers=headers)
 
 
+def _load_gates(source: str) -> tuple[Gate, ...]:
+    """Parse a gate spec: a JSON file path or an inline JSON document.
+
+    Each entry is a threshold gate::
+
+        [
+          {"gate_id": "dim/exact-match", "metric": "exact_match", "min_value": 0.9},
+          {"metric": "latency_ms", "max_value": 50.0, "severity": "critical"}
+        ]
+
+    ``gate_id`` defaults to ``dim/<metric>``; bounds default to no bound except
+    the one supplied; ``severity`` is one of ``info/low/medium/high/critical``.
+    """
+    raw = source
+    if os.path.isfile(source):
+        with open(source, encoding="utf-8") as handle:
+            raw = handle.read()
+    spec = json.loads(raw)
+    if not isinstance(spec, list):
+        raise ValueError("gate spec must be a JSON list of gates")
+    gates: list[Gate] = []
+    for item in spec:
+        if not isinstance(item, dict):
+            raise ValueError("each gate must be a JSON object")
+        metric = item.get("metric")
+        if not metric:
+            raise ValueError("each gate requires a `metric`")
+        gate_id = item.get("gate_id", f"dim/{metric}")
+        severity = GateSeverity(str(item["severity"])) if item.get("severity") else None
+        gates.append(
+            ThresholdGate(
+                gate_id,
+                str(metric),
+                min_value=item.get("min_value"),
+                max_value=item.get("max_value"),
+                severity=severity or GateSeverity.HIGH,
+            )
+        )
+    return tuple(gates)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="aegis",
@@ -94,6 +138,11 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--dataset-version", default="1.0.0")
     run.add_argument("--evaluators", default="aegis/deterministic/exact_match")
     run.add_argument("--commit-sha", default=None)
+    run.add_argument(
+        "--gates",
+        default=None,
+        help="Threshold gate spec: JSON file path or inline JSON list.",
+    )
     run.add_argument("--json", action="store_true", help="Emit JSON output.")
     return parser
 
@@ -108,7 +157,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _cmd_evaluate(args) -> int:
-    cli = Container()
+    gates = _load_gates(args.gates) if args.gates else ()
+    cli = Container(gates=gates)
     dataset = _load_dataset(cli, args.dataset, args.dataset_version)
 
     if args.target:
@@ -149,14 +199,34 @@ def _cmd_evaluate(args) -> int:
     )
 
     run = outcome.run
+    gate_report = cli.run_gate_store.load(run.id) if cli.run_gate_store.exists(run.id) else None
     if args.json:
-        print(json.dumps(_summary_json(outcome), indent=2))
+        print(json.dumps(_summary_json(outcome, gate_report), indent=2))
     else:
-        _print_human(outcome)
+        _print_human(outcome, gate_report)
     return 0 if run.status.value == "succeeded" else 1
 
 
-def _summary_json(outcome) -> dict:
+def _gate_json(report) -> dict | None:
+    if report is None:
+        return None
+    return {
+        "verdict": report.verdict.value,
+        "is_blocked": report.is_blocked,
+        "overridden_by": report.override.overridden_by if report.override else None,
+        "decisions": [
+            {
+                "gate_id": d.gate_id,
+                "verdict": d.verdict.value,
+                "severity": d.severity.value,
+                "reason": d.reason,
+            }
+            for d in report.decisions
+        ],
+    }
+
+
+def _summary_json(outcome, gate_report=None) -> dict:
     run = outcome.run
     return {
         "run_id": run.id,
@@ -172,10 +242,11 @@ def _summary_json(outcome) -> dict:
             for r in outcome.results
         ],
         "evidence_count": len(outcome.evidence),
+        "gate": _gate_json(gate_report),
     }
 
 
-def _print_human(outcome) -> None:
+def _print_human(outcome, gate_report=None) -> None:
     run = outcome.run
     print(f"run {run.id}: {run.status.value}")
     if run.evidence_summary is not None:
@@ -188,6 +259,16 @@ def _print_human(outcome) -> None:
     for r in outcome.results:
         print(f"  {r.test_case_id} {r.metric_name} = {r.score}")
     print(f"evidence records persisted: {len(outcome.evidence)}")
+    if gate_report is not None:
+        verdict = gate_report.verdict.value
+        blocked = " (BLOCKED)" if gate_report.is_blocked else ""
+        print(f"gate verdict: {verdict}{blocked}")
+        for d in gate_report.decisions:
+            print(f"  {d.gate_id}: {d.verdict.value} [{d.severity.value}] {d.reason}")
+        if gate_report.override is not None:
+            print(
+                f"  override by {gate_report.override.overridden_by}: {gate_report.override.reason}"
+            )
 
 
 __all__ = ["main"]
