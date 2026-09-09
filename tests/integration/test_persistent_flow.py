@@ -194,3 +194,45 @@ def test_worker_command_drains_queued_run(
     assert cli.queue.pending() == 0
     assert cli.run_service.status(organization, "user:alice", run_view.run_id).status == "succeeded"
     assert len(cli.evidence_repository.list_for_run(run_view.run_id)) == 2
+
+
+def test_evaluate_command_persists_when_env_configured(
+    monkeypatch, database_url, target_base_url, tmp_path
+) -> None:
+    """`aegis evaluate` writes the run + evidence to Postgres when wired by env."""
+    monkeypatch.setenv("AEGIS_DATABASE_URL", database_url)
+
+    dataset = tmp_path / "dataset.json"
+    dataset.write_text(
+        json.dumps(
+            {
+                "name": "cli-echo",
+                "test_cases": [
+                    {"input": "hello", "expected": "hello"},
+                    {"input": "world", "expected": "world"},
+                ],
+            }
+        )
+    )
+    target = tmp_path / "target.json"
+    target.write_text(
+        json.dumps(
+            {
+                "name": "cli-echo",
+                "target_type": "model_api",
+                "config": {"base_url": target_base_url},
+            }
+        )
+    )
+
+    from aegis.interface.cli import main
+
+    assert main(["evaluate", str(dataset), "--target", str(target), "--json"]) == 0
+
+    import psycopg
+
+    with psycopg.connect(database_url) as conn:
+        runs = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+        evidence = conn.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
+    assert runs == 1
+    assert evidence == 2

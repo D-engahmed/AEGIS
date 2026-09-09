@@ -205,7 +205,7 @@ def _cmd_worker(args) -> int:
 
 def _cmd_evaluate(args) -> int:
     gates = _load_gates(args.gates) if args.gates else ()
-    cli = Container(gates=gates)
+    cli = Container.from_env(gates=gates)
     dataset = _load_dataset(cli, args.dataset, args.dataset_version)
 
     if args.target:
