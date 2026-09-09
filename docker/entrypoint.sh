@@ -9,4 +9,4 @@ if [ "$#" -eq 0 ]; then
     set -- probe
 fi
 
-exec python -m aegis.cli "$@"
+exec python -m aegis.interface.cli "$@"

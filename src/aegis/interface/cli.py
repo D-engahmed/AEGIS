@@ -1,11 +1,15 @@
-"""Command-line evaluation workflow (layer 03 interface surface).
+"""Command-line interface (layer 03 interface surface).
 
-Runs a deterministic evaluation end-to-end in-process: load a dataset file,
-register the target + snapshot, build a REST target client from the target
-config, and drive the engine through the worker, then print the run summary,
-metric results, and persisted evidence records.
+The one CLI: `version` prints the installed release, `probe` verifies the
+runtime, `evaluate` runs a deterministic evaluation end-to-end, and `worker`
+drains the queue whose adapters are selected by `AEGIS_DATABASE_URL` /
+`AEGIS_REDIS_URL`. The container entrypoint (`docker/entrypoint.sh`) and the
+pip console script both land here.
 
-This is a thin consumer of the container; all behavior lives behind
+Evaluate flow: load a dataset file, register the target + snapshot, build a
+REST target client from the target config, and drive the engine through the
+worker, then print the run summary, metric results, and persisted evidence
+records. This is a thin consumer of the container; all behavior lives behind
 `Container.runner` so the command stays free of business logic.
 """
 
@@ -17,6 +21,7 @@ import os
 import sys
 from collections.abc import Sequence
 
+import aegis
 from aegis.domain.datasets import (
     add_test_case,
     create_dataset,
@@ -128,6 +133,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
+    p_version = sub.add_parser("version", help="Print the installed release.")
+    p_version.set_defaults(func=_cmd_version)
+
+    p_probe = sub.add_parser("probe", help="Probe the runtime for health.")
+    p_probe.set_defaults(func=_cmd_probe)
+
     run = sub.add_parser("evaluate", help="Run a dataset against a REST target.")
     run.add_argument("dataset", help="Path to a JSON dataset file.")
     run.add_argument("--target", help="Target spec JSON file (or use --base-url).")
@@ -144,6 +155,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Threshold gate spec: JSON file path or inline JSON list.",
     )
     run.add_argument("--json", action="store_true", help="Emit JSON output.")
+    run.set_defaults(func=_cmd_evaluate)
 
     worker = sub.add_parser(
         "worker",
@@ -156,18 +168,27 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Maximum runs to process; default runs until the queue is empty.",
     )
     worker.add_argument("--json", action="store_true", help="Emit JSON output.")
+    worker.set_defaults(func=_cmd_worker)
     return parser
+
+
+def _cmd_version(_args) -> int:
+    print(aegis.__version__)
+    return 0
+
+
+def _cmd_probe(_args) -> int:
+    from aegis.evaluation.plugins import list_evaluators
+
+    evaluators = len(list_evaluators())
+    print(f"aegis {aegis.__version__}: import ok, {evaluators} evaluators registered")
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    if args.command == "evaluate":
-        return _cmd_evaluate(args)
-    if args.command == "worker":
-        return _cmd_worker(args)
-    parser.print_help()
-    return 2
+    return args.func(args)
 
 
 def drain_queue(container: Container, count: int | None = None) -> int:

@@ -1,11 +1,11 @@
-"""Production CLI (container entrypoint): version, probe, worker."""
+"""Production CLI (container entrypoint): version, probe, worker on the interface CLI."""
 
 from __future__ import annotations
 
 import pytest
 
 import aegis
-from aegis.cli import main as production_main
+from aegis.interface.cli import main as production_main
 
 pytestmark = pytest.mark.unit
 
@@ -25,6 +25,3 @@ def test_production_cli_worker_empty_queue(monkeypatch, capsys) -> None:
     monkeypatch.delenv("AEGIS_REDIS_URL", raising=False)
     assert production_main(["worker", "--count", "5"]) == 0
     assert capsys.readouterr().out == "processed 0 run(s); 0 pending\n"
-
-
-__all__ = []

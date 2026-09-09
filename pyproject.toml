@@ -15,6 +15,9 @@ dependencies = [
     "redis>=5.0",
 ]
 
+[project.scripts]
+aegis = "aegis.interface.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
