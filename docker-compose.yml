@@ -1,11 +1,36 @@
 # AEGIS deployment compose.
 #
-# NOTE: the execution engine's production stores (PostgreSQL for records,
-# Redis for the job queue, object storage for evidence artifacts) do not yet
-# have adapters implemented in this release. The `aegis` service runs the
-# packaged, health-checked image standalone. Supporting services are declared
-# here as the documented topology target; wire their adapters in as they ship.
+# The execution engine's production stores: PostgreSQL for records, Redis for
+# the job queue. Evidence artifacts are kept in-process (content-hashed) until
+# an object-storage adapter ships. The `aegis` service connects to these via
+# AEGIS_DATABASE_URL / AEGIS_REDIS_URL (see infrastructure/postgres.py).
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: aegis
+      POSTGRES_DB: aegis
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis -d aegis"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5433:5432"
+    volumes:
+      - aegis_pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "6380:6379"
+
   aegis:
     build:
       context: .
@@ -13,6 +38,13 @@ services:
     image: aegis:${AEGIS_TAG:-latest}
     environment:
       AEGIS_ENV: production
+      AEGIS_DATABASE_URL: postgresql://aegis:aegis@postgres:5432/aegis
+      AEGIS_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "aegis-entrypoint", "probe"]
@@ -20,3 +52,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  aegis_pgdata:
