@@ -266,3 +266,20 @@ def apply_migrations(dsn: str) -> list[int]:
 
 
 __all__ = ["apply_migrations"]
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Apply migrations to the database at ``sys.argv[1]`` (the DSN)."""
+    import sys
+
+    args = list(argv if argv is not None else sys.argv[1:])
+    if len(args) != 1:
+        print("usage: python -m aegis.infrastructure.migrations <dsn>")
+        return 2
+    applied = apply_migrations(args[0])
+    print(f"applied migrations: {applied}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

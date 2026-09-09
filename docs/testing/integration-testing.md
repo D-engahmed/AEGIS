@@ -47,3 +47,21 @@ Test data is created through factories, not hand-written SQL fixtures. Factories
 ### Tagging Expensive Suites
 
 Integration suites that are slow or resource-heavy are tagged `expensive` and scheduled, not run on every commit. The default integration set stays fast enough for the CI sandbox. See `docs/testing/test-environments.md` for which suites run in which environment.
+
+## The Live Suite (`tests/integration/`)
+
+The repository's integration suite runs against the `docker compose up -d postgres redis` containers and is excluded from the fast unit gate:
+
+```text
+docker compose up -d postgres redis
+python -m pytest -m integration
+```
+
+Each test file and every test is tagged `integration`, so the marker also collects cleanly with a fresh DB: the shared `database_url` fixture drops and recreates the schema from empty and applies the migration set on every test, and `redis_url` flushes the queue keys. Tests **self-skip** when the services are unreachable, so the suite remains runnable on machines without Docker.
+
+The suite covers:
+
+- **Adapter round-trips** (`test_postgres_repositories.py`): experiments, runs (with idempotency lookup), executions, write-once metric results (`Conflict` on duplicate), catalog locked versions, evidence + provenance + artifacts, gate reports with overrides, and the cancellation registry — each after a clean schema.
+- **Queue semantics** (`test_redis_queue.py`): FIFO claim order, complete, abandon-redelivers-at-head, and clear.
+- **Queue + worker + persistence** (`test_persistent_flow.py`): a run submitted through `RunService` is pushed to Redis, claimed by an `ExecutionWorker`, executed against a live HTTP target, and its run, results, and linked evidence reload correctly from a brand-new `Container` — including the `aegis worker` and `aegis evaluate` CLI commands driven by `AEGIS_DATABASE_URL`/`AEGIS_REDIS_URL`, and submit idempotency across a restart.
+- **Gates over the persistent slice** (`test_persistent_gate_flow.py`): a blocking threshold gate recorded in PostgreSQL, its override, and both surviving a container restart.

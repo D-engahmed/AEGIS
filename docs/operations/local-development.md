@@ -55,17 +55,17 @@ Local infrastructure consists of the three stores the platform uses (`ADR-003`):
 - **Redis**: the job queue, caching, distributed locks, and rate limits (`ADR-002`).
 - **Object storage**: large artifacts — datasets, trace payloads, reports (S3-compatible, e.g. a local MinIO server or equivalent).
 
-The local `docker-compose.yml` defines a minimal stack for these services. Bring it up with:
+The local `docker-compose.yml` defines the stack for the stores AEGIS currently uses. Bring up the needed services with:
 
 ```text
-docker compose up -d
+docker compose up -d postgres redis
 ```
 
-- PostgreSQL listens on the default local port; the local database name and user are set in the compose file and mirrored in the non-secret local environment template.
-- Redis listens on its default local port.
-- Object storage exposes both the S3 API endpoint and a console; the bucket used by the platform is created at startup or by the migration/seed step.
+- **PostgreSQL** (`postgres:17-alpine`) listens on host port **5433** (the default 5432 is reserved for other local tooling); the local database, user, and password are `aegis`/`aegis`/`aegis` and the volume `aegis_pgdata` keeps data across restarts.
+- **Redis** (`redis:7-alpine`) listens on host port **6380**.
+- Both services run healthchecks; wait until `docker ps` shows them `healthy` before running integration tests.
 
-For the dedicated trace store (ADR-005), the local stack may include an OpenTelemetry collector or compatible local backend so traces are visible during development. The exporter endpoint used locally is to be confirmed in project config; if no local trace backend is configured, traces still appear in structured logs so spans remain inspectable.
+Object storage and a trace collector are not required for the current vertical slice; they remain future work in the compose file.
 
 The configuration for local connections comes from environment variables as defined in `configuration.md`. Use the non-secret template:
 
@@ -77,57 +77,49 @@ and then load it in your shell. The template contains no secrets.
 
 ## Environment Variables to Start the API and Workers
 
-The canonical variable names are to be confirmed in project config, but the shape is defined by the configuration model (`configuration.md`):
+The AEGIS `Container` resolves its adapters from these variables (`src/aegis/interface/container.py`):
 
 ```text
-AEGIS_ENV=local
-AEGIS_DATABASE_URL=postgresql+psycopg://<user>:<password>@localhost:<port>/<db>
-AEGIS_REDIS_URL=redis://localhost:<port>/0
-AEGIS_OBJECT_STORE_ENDPOINT=http://localhost:<port>
-AEGIS_OBJECT_STORE_BUCKET=aegis-artifacts
-AEGIS_TRACE_EXPORTER_ENDPOINT=http://localhost:<port>      # optional in local
-AEGIS_OTEL_METRICS_EXPORTER=<console or OTLP endpoint>     # local default often console
-AEGIS_LOG_LEVEL=INFO
+AEGIS_DATABASE_URL=postgresql://aegis:aegis@127.0.0.1:5433/aegis
+AEGIS_REDIS_URL=redis://127.0.0.1:6380/0
 ```
+
+- Setting `AEGIS_DATABASE_URL` selects the PostgreSQL adapters (experiments, runs, executions, results, catalog, cancellations, evidence, provenance, artifacts, gate reports) and applies pending migrations on startup.
+- Setting `AEGIS_REDIS_URL` selects the Redis-backed queue.
+- When a variable is unset the in-memory adapter is used, so the CLI works without any infrastructure. Pass `None` explicitly to force the in-memory path.
 
 No secret values belong in this set. Provider keys and other secrets are resolved from the secrets provider (`secrets-management.md`); local development normally uses fixtures and does not need them.
 
 ### Start the API
 
-```text
-uvicorn <entry-point-module>:<app> --reload --port 8000
-```
-
-The entry-point module path is to be confirmed in project config. The API binds locally and is available at `http://localhost:8000`; the interactive API documentation is served at its `docs` route.
+The API entry point is to be confirmed in project config. The command binds locally and serves the interactive API documentation at its `docs` route.
 
 ### Start the Workers
 
-The queue library is Celery, Dramatiq, or ARQ (`ADR-002`); the exact worker command is to be confirmed in project config. Conceptually:
+Start at least one worker process to execute experiments locally:
 
 ```text
-<queue-library-worker> worker --concurrency <N>
+aegis worker
 ```
 
-Workers consume evaluation jobs from the Redis-backed queue, invoke targets, collect traces, persist executions, and run evaluation and gates. Start at least one worker process to execute experiments locally. Worker concurrency defaults to the configured value; for local development a small concurrency (`1`-`4`) is sufficient.
+`aegis worker` claims jobs from the queue (`--count N` processes at most N runs), builds a REST target client from the run's registered target version, executes the run through the engine, links evidence, and completes the job. Claims are at-least-once: a crash redelivers the job, and replay is safe because run execution is idempotent and evidence linking is deduplicated per metric result.
 
 ## Running Migrations Locally
 
-Migrations are part of the schema-evolution discipline (`docs/data/schema-evolution.md`) and must run against local PostgreSQL before tests and experiments. The migration runner is to be confirmed in project config; conceptually:
+Migrations are part of the schema-evolution discipline (`docs/data/schema-evolution.md`). The runner in `aegis.infrastructure.migrations` applies a versioned set of DDL steps inside transactions, tracked in `aegis_schema_versions`. Migrations run automatically when a PostgreSQL-backed container is constructed; to migrate an existing database explicitly:
 
 ```text
-<schema-management-command> upgrade
+python -m aegis.infrastructure.migrations <dsn>
 ```
 
 The migration boundary from the immutability rules applies everywhere, including local: a migration that would touch an immutable row is forbidden.
 
 ## Running the Test Suites Locally
 
-The local test policy is defined in `test-environments.md`: local runs the unit suites and the fast integration suites against containers. No real LLM is required — targets and models are recorded fixtures or fake providers.
+The local test policy is defined in `test-environments.md`: local runs the unit suites and the integration suites against the compose containers. No real LLM is required — targets are deterministic HTTP fakes.
 
-- **Unit tests**: require no infrastructure and run anywhere.
-- **Integration tests**: require the local containers (PostgreSQL, Redis) to be up. The fast integration set covers the documented integration gates (for example tracer collection, retry policy, evidence graph, queue-backed job execution per the traceability matrix).
-
-The exact command for each suite is to be confirmed in project config. Local test execution never calls a real model provider. Deterministic and fixture-based tests must pass before pushing; the same fast suite gates the change in CI (`test-environments.md`).
+- **Unit tests**: require no infrastructure. `python -m pytest -m unit`
+- **Integration tests**: require PostgreSQL and Redis containers to be healthy. `python -m pytest -m integration`. The suite (`tests/integration/`) rescans the schema from empty, round-trips every Postgres adapter, exercises FIFO/abandon/redelivery against the Redis queue, and proves a run executed by the queue worker survives a container restart — including a blocking policy gate and its override. Tests self-skip when the services are unreachable.
 
 ## Seeding Demo Data
 
