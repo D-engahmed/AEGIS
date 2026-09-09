@@ -112,9 +112,15 @@ class ResultRepository(Protocol):
 
 @runtime_checkable
 class DataCatalog(Protocol):
+    """Target/dataset version registry; registration supports dev workflows."""
+
     def load_target_version(self, target_version_id: str) -> TargetVersion: ...
 
     def load_dataset_version(self, dataset_version_id: str) -> DatasetVersion: ...
+
+    def register_target(self, target_version: TargetVersion) -> None: ...
+
+    def register_dataset(self, dataset_version: DatasetVersion) -> None: ...
 
 
 @runtime_checkable

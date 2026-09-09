@@ -13,11 +13,21 @@ from aegis.analysis.comparison import WelchExperimentComparator
 from aegis.analysis.regression import WelchRegressionDetector
 from aegis.analysis.slicing import DimensionSlicer
 from aegis.analysis.trends import LinearTrendAnalyzer
+from aegis.application.ports import (
+    CancellationRegistry,
+    DataCatalog,
+    ExecutionRepository,
+    ExperimentRepository,
+    Queue,
+    ResultRepository,
+    RunRepository,
+)
 from aegis.application.run_gates import RunGateService
 from aegis.application.runner import EvaluationRunner
 from aegis.application.services import ExperimentService, RunService
 from aegis.domain.time import Clock, SystemClock
 from aegis.evidence.graph import InMemoryEvidenceGraph
+from aegis.evidence.ports import ArtifactManager, EvidenceRepository, ProvenanceQuery
 from aegis.infrastructure.memory import (
     InMemoryCancellationRegistry,
     InMemoryDataCatalog,
@@ -38,6 +48,7 @@ from aegis.observability.preservation import TracePreservationEngine
 from aegis.observability.run_tracing import EvaluationTracerProvider
 from aegis.observability.tracing import InMemoryExporter, InMemoryTracerProvider
 from aegis.policy.application import Gate
+from aegis.policy.ports import RunGateStore
 from aegis.security.audit import InMemorySecretsProvider, MemoryAuditLogger
 from aegis.security.auth import HmacTokenAuthProvider
 from aegis.security.pii import DefaultClassificationAnnotator, RegexPIIDetector
@@ -54,16 +65,60 @@ class Container:
         clock: Clock | None = None,
         *,
         gates: tuple[Gate, ...] = (),
+        database_url: str | None = None,
+        redis_url: str | None = None,
+        migrate: bool = True,
     ) -> None:
         self.clock = clock or SystemClock()
 
-        self.experiments = MemoryExperimentRepository()
-        self.runs = MemoryRunRepository()
-        self.executions = MemoryExecutionRepository()
-        self.results = MemoryResultRepository()
-        self.catalog = InMemoryDataCatalog()
-        self.cancellations = InMemoryCancellationRegistry()
-        self.queue = MemoryQueue()
+        self.experiments: ExperimentRepository
+        self.runs: RunRepository
+        self.executions: ExecutionRepository
+        self.results: ResultRepository
+        self.catalog: DataCatalog
+        self.cancellations: CancellationRegistry
+        self.run_gate_store: RunGateStore
+        self.evidence_repository: EvidenceRepository
+        self.provenance: ProvenanceQuery
+        self.artifacts: ArtifactManager
+        self.queue: Queue
+
+        if database_url is not None:
+            from aegis.infrastructure.postgres import PostgresStore
+
+            self.stores = PostgresStore(database_url)
+            if migrate:
+                self.stores.migrate()
+            self.experiments = self.stores.experiments
+            self.runs = self.stores.runs
+            self.executions = self.stores.executions
+            self.results = self.stores.results
+            self.catalog = self.stores.catalog
+            self.cancellations = self.stores.cancellations
+            self.run_gate_store = self.stores.run_gate_store
+            self.evidence_repository = self.stores.evidence
+            self.provenance = self.stores.provenance
+            self.artifacts = self.stores.artifacts
+        else:
+            self.experiments = MemoryExperimentRepository()
+            self.runs = MemoryRunRepository()
+            self.executions = MemoryExecutionRepository()
+            self.results = MemoryResultRepository()
+            self.catalog = InMemoryDataCatalog()
+            self.cancellations = InMemoryCancellationRegistry()
+            self.run_gate_store = MemoryRunGateStore()
+            self.evidence_repository = MemoryEvidenceRepository()
+            self.provenance = MemoryProvenanceIndex()
+            self.artifacts = MemoryArtifactManager()
+
+        if redis_url is not None:
+            from aegis.infrastructure.redis_queue import RedisQueue
+
+            self.queue = RedisQueue(redis_url)
+        else:
+            self.queue = MemoryQueue()
+
+        self.run_gates = RunGateService(self.run_gate_store, self.clock, gates=gates)
 
         self.experiment_service = ExperimentService(self.experiments, self.clock)
         self.run_service = RunService(
@@ -75,9 +130,6 @@ class Container:
             self.clock,
         )
 
-        self.run_gate_store = MemoryRunGateStore()
-        self.run_gates = RunGateService(self.run_gate_store, self.clock, gates=gates)
-
         self.auth = HmacTokenAuthProvider(AUTH_SECRET)
         self.rbac = RBACPermissionChecker()
         self.audit = MemoryAuditLogger()
@@ -85,9 +137,6 @@ class Container:
         self.classifier = DefaultClassificationAnnotator(self.pii)
         self.secrets = InMemorySecretsProvider()
 
-        self.evidence_repository = MemoryEvidenceRepository()
-        self.provenance = MemoryProvenanceIndex()
-        self.artifacts = MemoryArtifactManager()
         self.evidence_graph = InMemoryEvidenceGraph()
 
         from aegis.application.evaluation import EvaluationService

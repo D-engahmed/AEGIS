@@ -146,9 +146,16 @@ class EvaluationRunner:
         worker = ExecutionWorker(engine, self._queue)
         worker.process_next()
 
-        run = self._runs.load(run.id)
-        executions = {ex.id: ex for ex in self._executions.list_for_run(run.id)}
-        results = tuple(self._results.list_for_run(run.id))
+        return self.finish_run(run.id)
+
+    def finish_run(self, run_id: str) -> EvaluationOutcome:
+        """Finalize a completed run: load results and link their evidence."""
+        run = self._runs.load(run_id)
+        executions = {ex.id: ex for ex in self._executions.list_for_run(run_id)}
+        results = tuple(self._results.list_for_run(run_id))
+        experiment = self._experiments.load(run.experiment_id)
+        target_version = self._catalog.load_target_version(run.snapshot.target_version_id)
+        dataset_version = self._catalog.load_dataset_version(run.snapshot.dataset_version_id)
         evidence_records = []
         for result in results:
             execution = executions.get(result.execution_id)
