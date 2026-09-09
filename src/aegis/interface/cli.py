@@ -170,32 +170,40 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 2
 
 
-def _cmd_worker(args) -> int:
-    """Drain the queue: claim, execute, link evidence, complete (at-least-once).
+def drain_queue(container: Container, count: int | None = None) -> int:
+    """Run queued jobs to completion; returns how many were processed.
 
-    A crashed worker abandons its job with the engine idempotent per run and
-    evidence linking deduplicated per metric result, so redelivery is safe.
+    The queue is at-least-once: a crashed worker abandons its job, and replay
+    is safe because run execution is idempotent and evidence linking is
+    deduplicated per metric result. Terminal runs are skipped on redelivery.
     """
-    cli = Container.from_env()
     handled = 0
     while True:
-        job_id = cli.queue.claim()
+        job_id = container.queue.claim()
         if job_id is None:
             break
         try:
-            run = cli.runs.load(job_id)
+            run = container.runs.load(job_id)
             if not run.status.terminal:
-                target_version = cli.catalog.load_target_version(run.snapshot.target_version_id)
-                engine = cli.runner.engine(_rest_client(target_version))
+                target_version = container.catalog.load_target_version(
+                    run.snapshot.target_version_id
+                )
+                engine = container.runner.engine(_rest_client(target_version))
                 engine.run(job_id)
-            cli.runner.finish_run(job_id)
+            container.runner.finish_run(job_id)
         except Exception:
-            cli.queue.abandon(job_id)
+            container.queue.abandon(job_id)
             raise
-        cli.queue.complete(job_id)
+        container.queue.complete(job_id)
         handled += 1
-        if args.count is not None and handled >= args.count:
+        if count is not None and handled >= count:
             break
+    return handled
+
+
+def _cmd_worker(args) -> int:
+    cli = Container.from_env()
+    handled = drain_queue(cli, count=args.count)
     if args.json:
         print(json.dumps({"processed": handled, "pending": cli.queue.pending()}))
     else:
@@ -318,7 +326,7 @@ def _print_human(outcome, gate_report=None) -> None:
             )
 
 
-__all__ = ["main"]
+__all__ = ["drain_queue", "main"]
 
 
 if __name__ == "__main__":

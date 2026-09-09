@@ -236,3 +236,21 @@ def test_evaluate_command_persists_when_env_configured(
         evidence = conn.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
     assert runs == 1
     assert evidence == 2
+
+
+def test_production_worker_cli_drains_queue(
+    monkeypatch, database_url, redis_url, target_base_url, clock
+) -> None:
+    """The deployed entrypoint (`aegis.cli` worker) drains the queue over Postgres."""
+    monkeypatch.setenv("AEGIS_DATABASE_URL", database_url)
+    monkeypatch.setenv("AEGIS_REDIS_URL", redis_url)
+    cli = Container.from_env(clock)
+    organization, experiment_id = _seed_experiment(cli, clock, target_base_url)
+    run_view = cli.run_service.submit(organization, "user:alice", experiment_id)
+
+    from aegis.cli import main as production_main
+
+    assert production_main(["worker"]) == 0
+    assert cli.queue.pending() == 0
+    assert cli.run_service.status(organization, "user:alice", run_view.run_id).status == "succeeded"
+    assert len(cli.evidence_repository.list_for_run(run_view.run_id)) == 2

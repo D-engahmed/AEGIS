@@ -1,8 +1,9 @@
 """AEGIS command-line interface.
 
-Provides the minimal production entrypoints until the interface layer ships
-real service endpoints: `version` prints the installed release and `probe`
-verifies the runtime is healthy (imports resolve, version is readable).
+Production entrypoints for the deployed container: `version` prints the
+installed release, `probe` verifies the runtime is healthy, and `worker`
+drains the Redis-backed queue (adapters selected by `AEGIS_DATABASE_URL` /
+`AEGIS_REDIS_URL`) so the container executes evaluations end to end.
 """
 
 from __future__ import annotations
@@ -26,6 +27,16 @@ def _probe(_args: Namespace) -> int:
     return 0
 
 
+def _worker(args: Namespace) -> int:
+    from aegis.interface.cli import drain_queue
+    from aegis.interface.container import Container
+
+    container = Container.from_env()
+    processed = drain_queue(container, count=args.count)
+    print(f"processed {processed} run(s); {container.queue.pending()} pending")
+    return 0
+
+
 def build_parser() -> ArgumentParser:
     parser = ArgumentParser(prog="aegis", description=aegis.__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -35,6 +46,17 @@ def build_parser() -> ArgumentParser:
 
     p_probe = sub.add_parser("probe", help="probe the runtime for health")
     p_probe.set_defaults(func=_probe)
+
+    p_worker = sub.add_parser(
+        "worker", help="claim and execute queued runs (AEGIS_DATABASE_URL/AEGIS_REDIS_URL)"
+    )
+    p_worker.add_argument(
+        "--count",
+        type=int,
+        default=None,
+        help="Maximum runs to process; default runs until the queue is empty.",
+    )
+    p_worker.set_defaults(func=_worker)
 
     return parser
 
