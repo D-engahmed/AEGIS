@@ -247,6 +247,21 @@ def test_link_evidence_to_score_persists_once(
     assert repository.get(record.id) is record
 
 
+def test_link_evidence_to_score_is_idempotent_for_redelivery(
+    clock, experiment, target_version, dataset_version, execution, metric_result
+):
+    repository = MemoryEvidenceRepository()
+    first = link_evidence_to_score(
+        repository, clock, metric_result, execution, experiment, target_version, dataset_version
+    )
+    replay = link_evidence_to_score(
+        repository, clock, metric_result, execution, experiment, target_version, dataset_version
+    )
+    assert replay.id == first.id
+    assert len(repository.list_for_metric_result(metric_result.id)) == 1
+    assert len(repository.list_for_run("run:1")) == 1
+
+
 def test_evidence_repository_write_once(
     clock, experiment, target_version, dataset_version, execution, metric_result
 ):

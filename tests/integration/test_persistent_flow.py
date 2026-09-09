@@ -82,15 +82,8 @@ class _Fixture:
     base_url: str
 
 
-@pytest.fixture
-def context(database_url: str, redis_url: str, target_base_url: str, clock: FrozenClock):
-    """Fresh schema, catalog entries pinned to the live HTTP target, one experiment."""
-    container = Container(
-        clock,
-        database_url=database_url,
-        redis_url=redis_url,
-    )
-
+def _seed_experiment(container: Container, clock: FrozenClock, base_url: str) -> str:
+    """Register a dataset + target pinned to `base_url` and create the experiment."""
     dataset = create_dataset(clock, "org:1", "prj:1", "echo-qa")
     dataset_version, _ = create_dataset_version(clock, dataset, "1.0.0")
     for value in ("hello", "world"):
@@ -99,7 +92,7 @@ def context(database_url: str, redis_url: str, target_base_url: str, clock: Froz
     container.catalog.register_dataset(dataset_version)
 
     target = create_target(clock, "org:1", "prj:1", "echo", TargetType.MODEL_API)
-    target_version = create_target_version(clock, target, "1.0.0", {"base_url": target_base_url})
+    target_version = create_target_version(clock, target, "1.0.0", {"base_url": base_url})
     container.catalog.register_target(target_version)
 
     organization = create_organization(clock, "Acme", "user:alice")[0]
@@ -115,7 +108,19 @@ def context(database_url: str, redis_url: str, target_base_url: str, clock: Froz
             settings={},
         ),
     )
-    return _Fixture(container, organization, experiment.id, target_base_url)
+    return organization, experiment.id
+
+
+@pytest.fixture
+def context(database_url: str, redis_url: str, target_base_url: str, clock: FrozenClock):
+    """Fresh schema, catalog entries pinned to the live HTTP target, one experiment."""
+    container = Container(
+        clock,
+        database_url=database_url,
+        redis_url=redis_url,
+    )
+    organization, experiment_id = _seed_experiment(container, clock, target_base_url)
+    return _Fixture(container, organization, experiment_id, target_base_url)
 
 
 def test_persistent_run_survives_restart(context, clock) -> None:
@@ -170,3 +175,22 @@ def test_submit_is_idempotent_across_restart(context, clock) -> None:
     )
     assert replay.run_id == first.run_id
     assert len(restarted.executions.list_for_run(first.run_id)) == 2
+
+
+def test_worker_command_drains_queued_run(
+    monkeypatch, database_url, redis_url, target_base_url, clock
+) -> None:
+    monkeypatch.setenv("AEGIS_DATABASE_URL", database_url)
+    monkeypatch.setenv("AEGIS_REDIS_URL", redis_url)
+    cli = Container.from_env(clock)
+    organization, experiment_id = _seed_experiment(cli, clock, target_base_url)
+
+    run_view = cli.run_service.submit(organization, "user:alice", experiment_id)
+    assert cli.queue.pending() == 1
+
+    from aegis.interface.cli import main
+
+    assert main(["worker", "--count", "1"]) == 0
+    assert cli.queue.pending() == 0
+    assert cli.run_service.status(organization, "user:alice", run_view.run_id).status == "succeeded"
+    assert len(cli.evidence_repository.list_for_run(run_view.run_id)) == 2

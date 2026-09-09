@@ -10,10 +10,6 @@ from __future__ import annotations
 
 import psycopg
 
-_MIGRATIONS: list[tuple[int, str]] = [
-    (1, "initial aegis schema"),
-]
-
 
 def _ddl() -> list[str]:
     return [
@@ -190,6 +186,10 @@ def _ddl() -> list[str]:
         CREATE INDEX IF NOT EXISTS ix_evidence_metric ON evidence (metric_result_id)
         """,
         """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_evidence_metric_result
+            ON evidence (metric_result_id)
+        """,
+        """
         CREATE TABLE IF NOT EXISTS evidence_artifacts (
             artifact_id text PRIMARY KEY,
             artifact_type text NOT NULL,
@@ -220,8 +220,17 @@ def _ddl() -> list[str]:
     ]
 
 
-def _schema_statements() -> list[str]:
-    return _ddl()
+def _dedupe_constraint() -> str:
+    return """
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_evidence_metric_result
+        ON evidence (metric_result_id)
+    """
+
+
+_MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (1, "initial aegis schema", _ddl()),
+    (2, "unique evidence per metric result (write-once, replays)", [_dedupe_constraint()]),
+]
 
 
 def apply_migrations(dsn: str) -> list[int]:
@@ -238,13 +247,13 @@ def apply_migrations(dsn: str) -> list[int]:
                 )
                 """
             )
-            cur.execute("SELECT version FROM aegis_schema_versions ORDER BY version")
+            cur.execute("SELECT MAX(version) FROM aegis_schema_versions")
             row = cur.fetchone()
-        if row is None or row[0] != _MIGRATIONS[-1][0]:
-            for version, note in _MIGRATIONS:
-                if row is not None and version <= row[0]:
+        max_version = row[0] if row is not None else None
+        if max_version != _MIGRATIONS[-1][0]:
+            for version, note, statements in _MIGRATIONS:
+                if max_version is not None and version <= max_version:
                     continue
-                statements = _schema_statements() if version == 1 else []
                 with conn.transaction(), conn.cursor() as cur:
                     for statement in statements:
                         cur.execute(statement)

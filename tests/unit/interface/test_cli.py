@@ -139,6 +139,12 @@ def test_cli_evaluate_gates_from_file(tmp_path, capsys, base_url: str) -> None:
     assert payload["gate"]["is_blocked"] is False
 
 
+def test_cli_worker_empty_queue(capsys) -> None:
+    code = main(["worker", "--json"])
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == {"processed": 0, "pending": 0}
+
+
 def test_cli_requires_command(capsys) -> None:
     with pytest.raises(SystemExit) as exc:
         main([])

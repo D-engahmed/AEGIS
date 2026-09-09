@@ -8,6 +8,8 @@ can build a fresh one per test.
 
 from __future__ import annotations
 
+import os
+
 from aegis.analysis.clustering import CategoryFailureClassifier
 from aegis.analysis.comparison import WelchExperimentComparator
 from aegis.analysis.regression import WelchRegressionDetector
@@ -56,9 +58,37 @@ from aegis.security.rbac import RBACPermissionChecker
 
 AUTH_SECRET = "dev-only-secret-change-me"
 
+_UNSET = object()
+
 
 class Container:
     """Holds every collaborator the HTTP application needs."""
+
+    @classmethod
+    def from_env(
+        cls,
+        clock: Clock | None = None,
+        *,
+        gates: tuple[Gate, ...] = (),
+        database_url=_UNSET,
+        redis_url=_UNSET,
+        migrate: bool = True,
+    ) -> Container:
+        """Build from environment; explicit kwargs win over env vars.
+
+        ``AEGIS_DATABASE_URL`` / ``AEGIS_REDIS_URL`` select PostgreSQL/Redis
+        adapters; when unset the in-memory defaults are used so the tool works
+        without infrastructure. Pass ``None`` explicitly to force in-memory.
+        """
+        use_db = os.environ.get("AEGIS_DATABASE_URL") if database_url is _UNSET else database_url
+        use_redis = os.environ.get("AEGIS_REDIS_URL") if redis_url is _UNSET else redis_url
+        return cls(
+            clock,
+            gates=gates,
+            database_url=use_db,
+            redis_url=use_redis,
+            migrate=migrate,
+        )
 
     def __init__(
         self,

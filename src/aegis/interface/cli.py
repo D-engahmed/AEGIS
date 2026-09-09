@@ -144,6 +144,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Threshold gate spec: JSON file path or inline JSON list.",
     )
     run.add_argument("--json", action="store_true", help="Emit JSON output.")
+
+    worker = sub.add_parser(
+        "worker",
+        help="Claim and execute queued runs from the AEGIS queue (async worker).",
+    )
+    worker.add_argument(
+        "--count",
+        type=int,
+        default=None,
+        help="Maximum runs to process; default runs until the queue is empty.",
+    )
+    worker.add_argument("--json", action="store_true", help="Emit JSON output.")
     return parser
 
 
@@ -152,8 +164,43 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "evaluate":
         return _cmd_evaluate(args)
+    if args.command == "worker":
+        return _cmd_worker(args)
     parser.print_help()
     return 2
+
+
+def _cmd_worker(args) -> int:
+    """Drain the queue: claim, execute, link evidence, complete (at-least-once).
+
+    A crashed worker abandons its job with the engine idempotent per run and
+    evidence linking deduplicated per metric result, so redelivery is safe.
+    """
+    cli = Container.from_env()
+    handled = 0
+    while True:
+        job_id = cli.queue.claim()
+        if job_id is None:
+            break
+        try:
+            run = cli.runs.load(job_id)
+            if not run.status.terminal:
+                target_version = cli.catalog.load_target_version(run.snapshot.target_version_id)
+                engine = cli.runner.engine(_rest_client(target_version))
+                engine.run(job_id)
+            cli.runner.finish_run(job_id)
+        except Exception:
+            cli.queue.abandon(job_id)
+            raise
+        cli.queue.complete(job_id)
+        handled += 1
+        if args.count is not None and handled >= args.count:
+            break
+    if args.json:
+        print(json.dumps({"processed": handled, "pending": cli.queue.pending()}))
+    else:
+        print(f"processed {handled} run(s); {cli.queue.pending()} pending")
+    return 0
 
 
 def _cmd_evaluate(args) -> int:

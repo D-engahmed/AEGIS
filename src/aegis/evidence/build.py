@@ -75,7 +75,14 @@ def link_evidence_to_score(
     target_version: TargetVersion,
     dataset_version: DatasetVersion,
 ) -> EvidenceRecord:
-    """Persist the evidence record and return it; a duplicate result id is refused."""
+    """Persist the evidence record idempotently per metric result.
+
+    A redelivered job (at-least-once queue, worker.py) must not duplicate the
+    write-once record; returning the already-linked record is the safe replay.
+    """
+    existing = repository.list_for_metric_result(result.id)
+    if existing:
+        return existing[0]
     provenance = build_provenance(
         clock,
         experiment,
@@ -93,10 +100,6 @@ def link_evidence_to_score(
         dataset_version,
         provenance,
     )
-    if repository.exists(record.id):
-        from aegis.domain import Conflict
-
-        raise Conflict(f"evidence record {record.id!r} already persisted")
     repository.persist(record)
     return record
 
