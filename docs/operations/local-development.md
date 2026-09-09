@@ -102,7 +102,7 @@ Start at least one worker process to execute experiments locally:
 aegis worker
 ```
 
-`aegis worker` claims jobs from the queue (`--count N` processes at most N runs), builds a REST target client from the run's registered target version, executes the run through the engine, links evidence, and completes the job. Claims are at-least-once: a crash redelivers the job, and replay is safe because run execution is idempotent and evidence linking is deduplicated per metric result.
+`aegis worker` claims jobs from the queue (`--count N` processes at most N runs), builds a REST target client from the run's registered target version, executes the run through the engine, links evidence, and completes the job. Claims are at-least-once: a crash redelivers the job, and replay is safe because run execution is idempotent and evidence linking is deduplicated per metric result. Add `worker --watch` (with `--poll-seconds`) to keep the process alive, polling the queue forever — the compose `aegis` service runs `worker --watch` so the stack is a live worker, not a restarting one-shot.
 
 ## Running Migrations Locally
 

@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections.abc import Sequence
 
 import aegis
@@ -167,6 +168,17 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Maximum runs to process; default runs until the queue is empty.",
     )
+    worker.add_argument(
+        "--watch",
+        action="store_true",
+        help="Keep polling the queue forever (Ctrl-C to stop); for the compose worker.",
+    )
+    worker.add_argument(
+        "--poll-seconds",
+        type=float,
+        default=2.0,
+        help="Idle poll interval in seconds when --watch is set.",
+    )
     worker.add_argument("--json", action="store_true", help="Emit JSON output.")
     worker.set_defaults(func=_cmd_worker)
     return parser
@@ -222,14 +234,37 @@ def drain_queue(container: Container, count: int | None = None) -> int:
     return handled
 
 
+def run_worker(
+    cli: Container,
+    count: int | None = None,
+    watch: bool = False,
+    poll_seconds: float = 2.0,
+    json_out: bool = False,
+) -> int:
+    """Drain the queue, optionally polling forever (Ctrl-C stops cleanly)."""
+    while True:
+        try:
+            handled = drain_queue(cli, count=count)
+            if json_out:
+                print(json.dumps({"processed": handled, "pending": cli.queue.pending()}))
+            else:
+                print(f"processed {handled} run(s); {cli.queue.pending()} pending")
+            if not watch:
+                return 0
+            time.sleep(poll_seconds)
+        except KeyboardInterrupt:
+            return 0
+
+
 def _cmd_worker(args) -> int:
     cli = Container.from_env()
-    handled = drain_queue(cli, count=args.count)
-    if args.json:
-        print(json.dumps({"processed": handled, "pending": cli.queue.pending()}))
-    else:
-        print(f"processed {handled} run(s); {cli.queue.pending()} pending")
-    return 0
+    return run_worker(
+        cli,
+        count=args.count,
+        watch=args.watch,
+        poll_seconds=args.poll_seconds,
+        json_out=args.json,
+    )
 
 
 def _cmd_evaluate(args) -> int:
@@ -347,7 +382,7 @@ def _print_human(outcome, gate_report=None) -> None:
             )
 
 
-__all__ = ["drain_queue", "main"]
+__all__ = ["drain_queue", "main", "run_worker"]
 
 
 if __name__ == "__main__":

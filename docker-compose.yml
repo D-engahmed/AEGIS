@@ -36,6 +36,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: aegis:${AEGIS_TAG:-latest}
+    command: ["worker", "--watch"]
     environment:
       AEGIS_ENV: production
       AEGIS_DATABASE_URL: postgresql://aegis:aegis@postgres:5432/aegis
