@@ -202,4 +202,85 @@ def test_cli_requires_command(capsys) -> None:
     assert exc.value.code == 2
 
 
+def test_cli_record_captures_real_traffic(base_url: str, tmp_path, capsys) -> None:
+    dataset = _dataset(tmp_path, [("hello", "hello"), ("world", "world")])
+    recordings = str(tmp_path / "recordings.jsonl")
+    code = main(["record", dataset, "--base-url", base_url, "--recordings", recordings])
+    assert code == 0
+    assert "recorded 2 invocation(s)" in capsys.readouterr().out
+    from aegis.infrastructure.recordings import load_recordings
+
+    records = load_recordings(recordings)
+    assert len(records) == 2
+    assert all(r.output is not None for r in records)
+    assert len(_CliHandler.requests) == 2
+
+
+def test_cli_record_accepts_limit_and_json(base_url: str, tmp_path, capsys) -> None:
+    dataset = _dataset(tmp_path, [("a", "a"), ("b", "b"), ("c", "c")])
+    recordings = str(tmp_path / "recordings.jsonl")
+    code = main(
+        [
+            "record",
+            dataset,
+            "--base-url",
+            base_url,
+            "--recordings",
+            recordings,
+            "--limit",
+            "1",
+            "--json",
+        ]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {"recorded": 1, "path": recordings}
+    from aegis.infrastructure.recordings import load_recordings
+
+    assert len(load_recordings(recordings)) == 1
+
+
+def test_cli_evaluate_from_recordings_replays_offline(base_url: str, tmp_path, capsys) -> None:
+    """A target spec pinning a recordings fixture evaluates without any network."""
+    dataset = _dataset(tmp_path, [("hello", "hello"), ("world", "world")])
+    recordings = str(tmp_path / "recordings.jsonl")
+    assert main(["record", dataset, "--base-url", base_url, "--recordings", recordings]) == 0
+    capsys.readouterr()
+
+    target_spec = tmp_path / "target.json"
+    target_spec.write_text(
+        json.dumps({"name": "recorded-target", "config": {"recordings": recordings}})
+    )
+
+    live_runs = len(_CliHandler.requests)
+    code = main(["evaluate", dataset, "--target", str(target_spec), "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "succeeded"
+    assert payload["evidence_count"] == 2
+    assert all(r["score"] == 1.0 for r in payload["results"])
+    assert len(_CliHandler.requests) == live_runs  # no extra network calls on replay
+
+
+def test_cli_evaluate_committed_real_data_fixture(capsys) -> None:
+    """Evaluate real captured traffic (tests/fixtures/recordings) end-to-end offline.
+
+    The fixture was recorded live against an echo target; replay must reproduce
+    the same 1.0 exact-match scores deterministically without any network.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    dataset = str(root / "fixtures" / "datasets" / "echo.json")
+    spec = root / "fixtures" / "targets" / "recorded-echo.json"
+
+    code = main(["evaluate", dataset, "--target", str(spec), "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "succeeded"
+    assert payload["evidence_count"] == 2
+    assert {r["score"] for r in payload["results"]} == {1.0}
+    assert payload["executions"] == 2
+
+
 __all__ = []

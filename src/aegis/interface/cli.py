@@ -1,15 +1,17 @@
 """Command-line interface (layer 03 interface surface).
 
 The one CLI: `version` prints the installed release, `probe` verifies the
-runtime, `evaluate` runs a deterministic evaluation end-to-end, and `worker`
-drains the queue whose adapters are selected by `AEGIS_DATABASE_URL` /
-`AEGIS_REDIS_URL`. The container entrypoint (`docker/entrypoint.sh`) and the
-pip console script both land here.
+runtime, `record` captures real target traffic into a replay fixture,
+`evaluate` runs a deterministic evaluation end-to-end, and `worker` drains the
+queue whose adapters are selected by `AEGIS_DATABASE_URL` / `AEGIS_REDIS_URL`.
+The container entrypoint (`docker/entrypoint.sh`) and the pip console script
+both land here.
 
 Evaluate flow: load a dataset file, register the target + snapshot, build a
-REST target client from the target config, and drive the engine through the
-worker, then print the run summary, metric results, and persisted evidence
-records. This is a thin consumer of the container; all behavior lives behind
+target client from the target config (REST, or recorded-traffic replay when the
+config pins a `recordings` fixture), and drive the engine through the worker,
+then print the run summary, metric results, and persisted evidence records.
+This is a thin consumer of the container; all behavior lives behind
 `Container.runner` so the command stays free of business logic.
 """
 
@@ -23,6 +25,7 @@ import time
 from collections.abc import Sequence
 
 import aegis
+from aegis.application.ports import TargetInvocationError, TargetInvocationRequest
 from aegis.domain.datasets import (
     add_test_case,
     create_dataset,
@@ -34,6 +37,11 @@ from aegis.domain.targets import (
     TargetType,
     create_target,
     create_target_version,
+)
+from aegis.infrastructure.recordings import (
+    InvocationRecord,
+    RecordedTrafficTargetClient,
+    write_recordings,
 )
 from aegis.infrastructure.rest_target import RestTargetClient
 from aegis.interface.container import Container
@@ -78,8 +86,12 @@ def _load_target(cli: Container, target_spec: dict, label: str, commit_sha: str 
     return version
 
 
-def _rest_client(target_version) -> RestTargetClient:
+def _rest_client(target_version) -> RestTargetClient | RecordedTrafficTargetClient:
     config = dict(target_version.config)
+    recordings = config.pop("recordings", None)
+    if recordings is not None:
+        match_on = str(config.pop("match_on", "auto"))
+        return RecordedTrafficTargetClient(recordings, match_on=match_on)
     base_url = str(config.pop("base_url", "http://127.0.0.1:8080"))
     invoke_path = str(config.pop("invoke_path", "/invoke"))
     headers = dict(config.pop("headers", {}) or {})
@@ -157,6 +169,21 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--json", action="store_true", help="Emit JSON output.")
     run.set_defaults(func=_cmd_evaluate)
+
+    record = sub.add_parser(
+        "record",
+        help="Capture real target traffic into a replay fixture (JSONL).",
+    )
+    record.add_argument("dataset", help="Path to a JSON dataset file.")
+    record.add_argument("--target", help="Target spec JSON file (or use --base-url).")
+    record.add_argument("--base-url", help="Target base URL, e.g. http://localhost:8080.")
+    record.add_argument("--invoke-path", default="/invoke", help="Target invoke path.")
+    record.add_argument("--target-type", default="llm_application")
+    record.add_argument("--recordings", default="recordings.jsonl", help="Output fixture path.")
+    record.add_argument("--limit", type=int, default=None, help="Cap the number of recordings.")
+    record.add_argument("--timeout", type=float, default=10.0, help="Per-invocation timeout (s).")
+    record.add_argument("--json", action="store_true", help="Emit JSON output.")
+    record.set_defaults(func=_cmd_record)
 
     worker = sub.add_parser(
         "worker",
@@ -339,6 +366,67 @@ def _cmd_serve(args) -> int:
 
     container = Container.from_env()
     uvicorn.run(create_app(container), host=args.host, port=args.port)
+    return 0
+
+
+def _cmd_record(args) -> int:
+    cli = Container()
+    dataset = _load_dataset(cli, args.dataset, "1.0.0")
+    if args.target:
+        with open(args.target, encoding="utf-8") as handle:
+            spec = json.load(handle)
+    else:
+        spec = {
+            "name": "cli-target",
+            "target_type": args.target_type,
+            "config": {
+                "base_url": args.base_url or "http://127.0.0.1:8080",
+                "invoke_path": args.invoke_path,
+            },
+        }
+    target_version = _load_target(cli, spec, "1.0.0", None)
+    client = _rest_client(target_version)
+
+    records: list[InvocationRecord] = []
+    for case in dataset.test_cases:
+        request = TargetInvocationRequest(
+            test_case_id=case.id,
+            target_version_id=target_version.id,
+            payload=case.input,
+            metadata=case.metadata,
+        )
+        try:
+            invocation = client.invoke(request, args.timeout)
+        except TargetInvocationError as error:
+            records.append(
+                InvocationRecord(
+                    test_case_id=case.id,
+                    input=case.input,
+                    error_code=error.code.value,
+                    error_message=error.message,
+                )
+            )
+        else:
+            records.append(
+                InvocationRecord(
+                    test_case_id=case.id,
+                    input=case.input,
+                    output=invocation.output,
+                    latency_ms=invocation.latency_ms,
+                    input_tokens=invocation.input_tokens,
+                    output_tokens=invocation.output_tokens,
+                    cost_usd=invocation.cost_usd,
+                    trace_artifact_id=invocation.trace_artifact_id,
+                )
+            )
+        if args.limit and len(records) >= args.limit:
+            break
+
+    write_recordings(args.recordings, records)
+    if args.json:
+        print(json.dumps({"recorded": len(records), "path": args.recordings}))
+    else:
+        print(f"recorded {len(records)} invocation(s) -> {args.recordings}")
     return 0
 
 

@@ -1,0 +1,4 @@
+{"name": "recorded-echo", "test_cases": [
+    {"input": "hello", "expected": "hello"},
+    {"input": "world", "expected": "world"}
+]}
