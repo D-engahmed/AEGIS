@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AEGIS Dashboard</title>
+<style>
+  :root { --bg:#0f1420; --panel:#171e2e; --panel2:#1d2637; --line:#2a3550;
+          --text:#dbe4f3; --muted:#8b97ad; --accent:#4f9cff; --ok:#3fbf7f;
+          --warn:#e6b84f; --bad:#e0665f; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:12px 20px;
+           border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { font-size:16px; margin:0; letter-spacing:.4px; }
+  header .subtle { color:var(--muted); font-size:12px; }
+  #auth-state { margin-left:auto; font-size:12px; color:var(--muted); }
+  #auth-state.ok { color:var(--ok); }
+  #auth-state.bad { color:var(--bad); }
+  main { padding:20px; max-width:1100px; margin:0 auto; }
+  section { background:var(--panel); border:1px solid var(--line);
+            border-radius:10px; margin-bottom:18px; overflow:hidden; }
+  section > h2 { margin:0; padding:10px 16px; font-size:13px; text-transform:uppercase;
+                 letter-spacing:.8px; color:var(--muted); border-bottom:1px solid var(--line);
+                 background:var(--panel2); }
+  .banner { display:none; margin:16px 20px -8px; padding:10px 14px; border-radius:8px;
+            font-size:13px; background:#2a2112; border:1px solid var(--warn); color:#f0d9a8; }
+  .hint { color:var(--muted); font-size:12px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--line);
+           vertical-align:top; word-break:break-all; }
+  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase;
+       letter-spacing:.5px; }
+  tr.clickable { cursor:pointer; }
+  tr.clickable:hover td { background:var(--panel2); }
+  .status { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px;
+            border:1px solid var(--line); }
+  .status.running { color:var(--accent); border-color:var(--accent); }
+  .status.succeeded { color:var(--ok); border-color:var(--ok); }
+  .status.failed { color:var(--bad); border-color:var(--bad); }
+  .status.cancelled { color:var(--muted); }
+  button { background:var(--accent); color:#04101f; border:0; border-radius:6px;
+           padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+  .empty { padding:16px; color:var(--muted); font-size:13px; }
+  .grid { display:grid; grid-template-columns:1fr 2fr; gap:18px; }
+  @media (max-width:900px) { .grid { grid-template-columns:1fr; } }
+  code, .mono { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; }
+  .muted { color:var(--muted); }
+  aside.run-detail { border-left:1px solid var(--line); }
+  .run-detail h3 { margin:0; padding:10px 16px; font-size:12px; text-transform:uppercase;
+                   letter-spacing:.5px; color:var(--muted); border-bottom:1px solid var(--line); }
+  .run-detail .block { padding:12px 16px; border-bottom:1px solid var(--line); }
+  #error-line { color:var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <h1>AEGIS<span class="subtle"> &middot; evaluation, reliability &amp; observability</span></h1>
+  <span id="auth-state">connecting&#8230;</span>
+</header>
+<main>
+  <div class="banner" id="login-banner">
+    Dashboard login unavailable. Start the API with <code>AEGIS_DEV_LOGIN=1</code>
+    (development only) to mint a session token, e.g.
+    <code>docker compose exec api aegis serve</code> after setting the env.
+  </div>
+
+  <div class="grid">
+    <section id="exp-section">
+      <h2>Experiments</h2>
+      <div id="exp-msg" class="empty">Loading&#8230;</div>
+      <table id="exp-table" style="display:none"></table>
+    </section>
+
+    <section id="runs-section">
+      <h2>Runs <span id="runs-for" class="muted"></span></h2>
+      <div id="runs-empty" class="empty">Select an experiment to see its runs.</div>
+      <table id="runs-table" style="display:none"></table>
+      <div style="padding:12px 16px">
+        <button id="submit-run" class="ghost" disabled>Submit run</button>
+        <button id="refresh-runs" class="ghost" disabled>Refresh</button>
+      </div>
+    </section>
+  </div>
+
+  <section id="detail-section" style="display:none">
+    <h2 id="detail-title">Run detail</h2>
+    <table id="detail-meta"></table>
+    <h3 class="muted">Results</h3>
+    <table id="results-table"></table>
+    <h3 class="muted">Evidence</h3>
+    <table id="evidence-table"></table>
+  </section>
+</main>
+
+<script>
+"use strict";
+const API = ""; // same-origin
+let TOKEN = null;
+let experiments = [];
+let selected = null;
+
+const $ = (id) => document.getElementById(id);
+const authState = $("auth-state");
+
+function headers(json) {
+  const h = { Accept: "application/json" };
+  if (TOKEN) h.Authorization = "Bearer " + TOKEN;
+  if (json) h["Content-Type"] = "application/json";
+  return h;
+}
+
+async function api(path, opts) {
+  const res = await fetch(API + path, Object.assign({ headers: headers(false) }, opts));
+  if (!res.ok) {
+    let detail = res.status + " " + res.statusText;
+    try { const body = await res.json(); detail = body.detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+function esc(s) {
+  if (s == null) return "";
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function badge(status) {
+  return `<span class="status ${esc(status)}">${esc(status)}</span>`;
+}
+
+async function bootstrap() {
+  try {
+    const out = await api("/security/dev-token");
+    TOKEN = out.token;
+    authState.textContent = "authenticated (dev token)";
+    authState.className = "ok";
+    $("submit-run").disabled = false;
+    $("refresh-runs").disabled = false;
+    await loadExperiments();
+  } catch (err) {
+    authState.textContent = "unauthenticated: " + esc(err.message);
+    authState.className = "bad";
+    $("login-banner").style.display = "block";
+    $("exp-msg").textContent = "Login required to list experiments.";
+  }
+}
+
+async function loadExperiments() {
+  experiments = await api("/experiments");
+  const t = $("exp-table");
+  const msg = $("exp-msg");
+  if (!experiments.length) {
+    t.style.display = "none";
+    msg.style.display = "block";
+    msg.textContent = "No experiments yet. Create one via the API (POST /experiments).";
+    return;
+  }
+  msg.style.display = "none";
+  t.style.display = "table";
+  t.innerHTML =
+    "<thead><tr><th>Name</th><th>Status</th><th>Created</th><th>Runs</th></tr></thead><tbody>" +
+    experiments.map((e) => `
+      <tr class="clickable" data-id="${esc(e.id)}">
+        <td><strong>${esc(e.name)}</strong><br><span class="mono muted">${esc(e.id)}</span></td>
+        <td>${badge(e.status)}</td>
+        <td>${esc(new Date(e.created_at).toLocaleString())}</td>
+        <td>view</td>
+      </tr>`).join("") +
+    "</tbody>";
+  t.querySelectorAll("tr.clickable").forEach((tr) => {
+    tr.onclick = () => selectExperiment(tr.dataset.id);
+  });
+}
+
+async function selectExperiment(id) {
+  selected = experiments.find((e) => e.id === id) || null;
+  if (!selected) return;
+  $("runs-for").innerHTML = "&middot; " + esc(selected.name);
+  await loadRuns();
+}
+
+async function loadRuns() {
+  if (!selected) return;
+  const runs = await api(`/experiments/${encodeURIComponent(selected.id)}/runs`);
+  const t = $("runs-table");
+  const empty = $("runs-empty");
+  if (!runs.length) {
+    t.style.display = "none";
+    empty.style.display = "block";
+    empty.textContent = "No runs yet for this experiment.";
+    return;
+  }
+  empty.style.display = "none";
+  t.style.display = "table";
+  t.innerHTML =
+    "<thead><tr><th>Status</th><th>Created</th><th>Finished</th><th></th></tr></thead><tbody>" +
+    runs.map((r) => `
+      <tr class="clickable" data-id="${esc(r.run_id)}">
+        <td>${badge(r.status)}</td>
+        <td>${esc(new Date(r.created_at).toLocaleString())}</td>
+        <td>${r.finished_at ? esc(new Date(r.finished_at).toLocaleString()) : "&mdash;"}</td>
+        <td>detail</td>
+      </tr>`).join("") +
+    "</tbody>";
+  t.querySelectorAll("tr.clickable").forEach((tr) => {
+    tr.onclick = () => loadRunDetail(tr.dataset.id);
+  });
+  if (runs.some((r) => !r.finished_at)) { $("refresh-runs").disabled = false; }
+}
+
+async function loadRunDetail(runId) {
+  const [run, results, evidence] = await Promise.all([
+    api(`/runs/${encodeURIComponent(runId)}`),
+    api(`/runs/${encodeURIComponent(runId)}/results`),
+    api(`/evidence/runs/${encodeURIComponent(runId)}`),
+  ]);
+  const section = $("detail-section");
+  section.style.display = "block";
+  $("detail-title").textContent = "Run detail: " + run.run_id;
+  const summary = run.evidence_summary ? JSON.stringify(run.evidence_summary) : "";
+  $("detail-meta").innerHTML = `
+    <tr><th>Status</th><td>${badge(run.status)} ${run.error ? `<span id="error-line">${esc(JSON.stringify(run.error))}</span>` : ""}</td></tr>
+    <tr><th>Created</th><td>${esc(new Date(run.created_at).toLocaleString())}</td></tr>
+    <tr><th>Started</th><td>${run.started_at ? esc(new Date(run.started_at).toLocaleString()) : "&mdash;"}</td></tr>
+    <tr><th>Finished</th><td>${run.finished_at ? esc(new Date(run.finished_at).toLocaleString()) : "&mdash;"}</td></tr>
+    <tr><th>Evidence summary</th><td class="mono">${esc(summary)}</td></tr>
+  `;
+  const rt = $("results-table");
+  if (!results.length) {
+    rt.innerHTML = `<tr><td class="empty">No metric results yet.</td></tr>`;
+  } else {
+    rt.innerHTML =
+      "<thead><tr><th>Metric</th><th>Score</th><th>Severity</th><th>Reason</th></tr></thead><tbody>" +
+      results.map((r) => `
+        <tr>
+          <td class="mono">${esc(r.metric_name)}</td>
+          <td>${r.score != null ? esc(r.score) : "&mdash;"}</td>
+          <td>${r.severity ? esc(r.severity) : "&mdash;"}</td>
+          <td>${esc(r.reason || "")}</td>
+        </tr>`).join("") +
+      "</tbody>";
+  }
+  const et = $("evidence-table");
+  if (!evidence.length) {
+    et.innerHTML = `<tr><td class="empty">No evidence recorded.</td></tr>`;
+  } else {
+    et.innerHTML =
+      "<thead><tr><th>Type</th><th>Execution</th><th>Assertion</th><th>File</th><th>Checksums</th></tr></thead><tbody>" +
+      evidence.map((ev) => `
+        <tr>
+          <td class="mono">${esc(ev.content.type)}</td>
+          <td class="mono">${esc(ev.execution_id)}</td>
+          <td>${esc(ev.content.assertion || "")}</td>
+          <td class="mono">${esc(ev.content.file_ref || ev.content.uri || "")}</td>
+          <td class="mono">${esc(ev.content.sha256 || ev.content.size || "&mdash;")}</td>
+        </tr>`).join("") +
+      "</tbody>";
+  }
+}
+
+$("refresh-runs").onclick = () => loadRuns();
+$("submit-run").onclick = async () => {
+  if (!selected) return;
+  const key = crypto.randomUUID();
+  const btn = $("submit-run");
+  btn.disabled = true;
+  try {
+    const run = await api("/runs", {
+      method: "POST",
+      headers: headers(true),
+      body: JSON.stringify({ experiment_id: selected.id, idempotency_key: key }),
+    });
+    await loadRuns();
+    await loadRunDetail(run.run_id);
+  } catch (err) {
+    alert("submit failed: " + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+setTimeout(bootstrap, 50);
+</script>
+</body>
+</html>

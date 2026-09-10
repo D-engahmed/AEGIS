@@ -225,6 +225,15 @@ class PostgresExperimentRepository:
             cur.execute("SELECT 1 FROM experiments WHERE id = %s", (experiment_id,))
             return cur.fetchone() is not None
 
+    def list_for_org(self, organization_id: str) -> list[Experiment]:
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM experiments WHERE organization_id = %s ORDER BY created_at DESC",
+                (organization_id,),
+            )
+            rows = cur.fetchall()
+        return [_experiment_from(row) for row in rows]
+
 
 def _experiment_from(row) -> Experiment:
     return Experiment(
@@ -302,6 +311,15 @@ class PostgresRunRepository:
             cur.execute("SELECT * FROM runs WHERE idempotency_key = %s", (key,))
             row = cur.fetchone()
         return _run_from(row) if row is not None else None
+
+    def list_for_org(self, organization_id: str, limit: int = 50) -> list[Run]:
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM runs WHERE organization_id = %s ORDER BY created_at DESC LIMIT %s",
+                (organization_id, limit),
+            )
+            rows = cur.fetchall()
+        return [_run_from(row) for row in rows]
 
 
 def _run_from(row) -> Run:

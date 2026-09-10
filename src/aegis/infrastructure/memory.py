@@ -50,6 +50,13 @@ class MemoryExperimentRepository:
     def exists(self, experiment_id: str) -> bool:
         return experiment_id in self._items
 
+    def list_for_org(self, organization_id: str) -> list[Experiment]:
+        return [
+            ex
+            for ex in sorted(self._items.values(), key=lambda e: e.created_at, reverse=True)
+            if ex.organization_id == organization_id
+        ]
+
 
 class MemoryRunRepository:
     def __init__(self) -> None:
@@ -69,6 +76,11 @@ class MemoryRunRepository:
 
     def find_by_idempotency(self, key: str) -> Run | None:
         return self._by_key.get(key)
+
+    def list_for_org(self, organization_id: str, limit: int = 50) -> list[Run]:
+        items = [r for r in self._items.values() if r.organization_id == organization_id]
+        items.sort(key=lambda r: r.created_at, reverse=True)
+        return items[:limit]
 
 
 class MemoryExecutionRepository:

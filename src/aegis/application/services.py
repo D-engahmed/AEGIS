@@ -60,6 +60,10 @@ class ExperimentService:
         self._require_member(organization, actor)
         return self._load(experiment_id)
 
+    def list(self, organization: Organization, actor: str) -> list[Experiment]:
+        self._require_member(organization, actor)
+        return self._experiments.list_for_org(organization.id)
+
     def clone(
         self,
         organization: Organization,
@@ -175,6 +179,19 @@ class RunService:
     ) -> RunView:
         organization.require_membership(actor)
         return RunView.from_run(self._runs.load(run_id))
+
+    def list(
+        self,
+        organization: Organization,
+        actor: str,
+        experiment_id: str | None = None,
+        limit: int = 50,
+    ) -> list[RunView]:
+        organization.require_membership(actor)
+        runs = self._runs.list_for_org(organization.id, limit=limit)
+        if experiment_id is not None:
+            runs = [r for r in runs if r.experiment_id == experiment_id]
+        return [RunView.from_run(r) for r in runs]
 
     def _validate_snapshot(self, experiment: Experiment) -> None:
         self._catalog.load_target_version(experiment.snapshot.target_version_id)

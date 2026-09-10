@@ -6,7 +6,10 @@ Composes the container, registers routers and exception handlers, and exposes
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 
 from .container import Container
 from .errors import register_exception_handlers
@@ -18,6 +21,8 @@ from .routers.observability import router as observability_router
 from .routers.policy import router as policy_router
 from .routers.runs import router as runs_router
 from .routers.security import router as security_router
+
+UI_DIR = Path(__file__).resolve().parent / "ui"
 
 DESCRIPTION = (
     "AEGIS - AI Evaluation, Reliability & Observability Platform. "
@@ -46,6 +51,10 @@ def create_app(container: Container | None = None) -> FastAPI:
     app.include_router(policy_router)
     app.include_router(observability_router)
     app.include_router(health_router)
+
+    @app.get("/", include_in_schema=False)
+    def dashboard() -> FileResponse:
+        return FileResponse(UI_DIR / "index.html", media_type="text/html")
 
     register_exception_handlers(app)
     return app

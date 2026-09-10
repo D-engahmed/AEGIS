@@ -82,6 +82,8 @@ class ExperimentRepository(Protocol):
 
     def exists(self, experiment_id: str) -> bool: ...
 
+    def list_for_org(self, organization_id: str) -> list[Experiment]: ...
+
 
 @runtime_checkable
 class RunRepository(Protocol):
@@ -90,6 +92,8 @@ class RunRepository(Protocol):
     def load(self, run_id: str) -> Run: ...
 
     def find_by_idempotency(self, key: str) -> Run | None: ...
+
+    def list_for_org(self, organization_id: str, limit: int = 50) -> list[Run]: ...
 
 
 @runtime_checkable

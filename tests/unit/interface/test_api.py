@@ -82,6 +82,85 @@ def test_garbage_token_is_rejected(api) -> None:
     assert resp.status_code == 403
 
 
+def test_dashboard_is_served_at_root(api) -> None:
+    _, client = api
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "AEGIS Dashboard" in resp.text
+
+
+def test_dev_token_disabled_by_default(api) -> None:
+    _, client = api
+    resp = client.get("/security/dev-token")
+    assert resp.status_code == 403
+
+
+def test_dev_token_mints_valid_token_when_enabled(api, monkeypatch) -> None:
+    container, client = api
+    monkeypatch.setenv("AEGIS_DEV_LOGIN", "1")
+    resp = client.get("/security/dev-token")
+    assert resp.status_code == 200
+    token = resp.json()["token"]
+    context = container.auth.validate_token(token, now=container.clock.now())
+    assert context.organization_id == "org:1"
+
+
+def test_list_experiments_is_tenant_scoped(api) -> None:
+    container, client = api
+    target_version_id, dataset_version_id = _seed(container)
+    token = container.auth.issue("user:alice", "org:1", Role.ADMIN)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    created = client.post(
+        "/experiments",
+        headers=headers,
+        json={
+            "name": "listed-exp",
+            "project_id": "prj:1",
+            "snapshot": {
+                "target_version_id": target_version_id,
+                "dataset_version_id": dataset_version_id,
+                "evaluator_version_ids": ["aegis/deterministic/exact_match"],
+            },
+        },
+    )
+    assert created.status_code == 201
+
+    other = container.auth.issue("user:bob", "org:2", Role.ADMIN)
+    other_headers = {"Authorization": f"Bearer {other}"}
+    assert client.get("/experiments", headers=other_headers).json() == []
+
+    listed = client.get("/experiments", headers=headers).json()
+    assert [e["id"] for e in listed] == [created.json()["id"]]
+
+
+def test_list_runs_for_experiment(api) -> None:
+    container, client = api
+    target_version_id, dataset_version_id = _seed(container)
+    token = container.auth.issue("user:alice", "org:1", Role.ADMIN)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    created = client.post(
+        "/experiments",
+        headers=headers,
+        json={
+            "name": "runs-exp",
+            "project_id": "prj:1",
+            "snapshot": {
+                "target_version_id": target_version_id,
+                "dataset_version_id": dataset_version_id,
+                "evaluator_version_ids": ["aegis/deterministic/exact_match"],
+            },
+        },
+    ).json()
+    run = client.post("/runs", headers=headers, json={"experiment_id": created["id"]}).json()
+
+    runs = client.get(f"/experiments/{created['id']}/runs", headers=headers).json()
+    assert [r["run_id"] for r in runs] == [run["run_id"]]
+    assert runs[0]["status"] in {"queued", "running"}
+
+
 def test_authenticated_experiment_start_submit_run_flow(api) -> None:
     container, client = api
     target_version_id, dataset_version_id = _seed(container)

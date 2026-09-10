@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -16,9 +17,43 @@ from ..deps import (
     get_container,
     require_permission,
 )
-from ..schemas import ExperimentCreateIn, ExperimentOut
+from ..schemas import ExperimentCreateIn, ExperimentOut, RunOut
 
 router = APIRouter(prefix="/experiments", tags=["experiments"])
+
+
+@router.get("", response_model=list[ExperimentOut])
+def list_experiments(
+    actor: Annotated[Actor, Depends(require_permission(Permission.EXPERIMENT_VIEW))],
+    container: Annotated[Container, Depends(get_container)],
+) -> list[ExperimentOut]:
+    """List experiments within the caller's tenant, newest first."""
+    experiments = container.experiment_service.list(actor.organization, actor.context.user_id)
+    return [
+        ExperimentOut(
+            id=e.id,
+            organization_id=e.organization_id,
+            project_id=e.project_id,
+            name=e.name,
+            status=e.status.value,
+            created_at=e.created_at,
+            clone_of=e.clone_of,
+        )
+        for e in experiments
+    ]
+
+
+@router.get("/{experiment_id}/runs", response_model=list[RunOut])
+def list_experiment_runs(
+    experiment_id: str,
+    actor: Annotated[Actor, Depends(require_permission(Permission.RUN_VIEW))],
+    container: Annotated[Container, Depends(get_container)],
+) -> list[RunOut]:
+    """List runs for an experiment within the caller's tenant, newest first."""
+    views = container.run_service.list(
+        actor.organization, actor.context.user_id, experiment_id=experiment_id
+    )
+    return [RunOut(**asdict(v)) for v in views]
 
 
 @router.post("", response_model=ExperimentOut, status_code=201)

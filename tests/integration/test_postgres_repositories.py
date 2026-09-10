@@ -117,6 +117,36 @@ def test_experiment_and_run_roundtrip_with_idempotency(
     assert store.runs.load(run.id).status.value == "running"
 
 
+def test_list_for_org_is_scoped_and_newest_first(
+    store: PostgresStore, clock: FrozenClock, catalog_versions
+) -> None:
+    target_version, dataset_version = catalog_versions
+    snapshot = ExperimentSnapshot(
+        target_version_id=target_version.id,
+        dataset_version_id=dataset_version.id,
+        evaluator_version_ids=("aegis/deterministic/exact_match",),
+        settings={},
+    )
+    exp1, _ = create_experiment(clock, "org:1", "prj:1", "first", snapshot=snapshot)
+    store.experiments.save(exp1)
+    exp_other, _ = create_experiment(clock, "org:2", "prj:9", "other-org", snapshot=snapshot)
+    store.experiments.save(exp_other)
+
+    listed = store.experiments.list_for_org("org:1")
+    assert [e.id for e in listed] == [exp1.id]
+
+    run1 = run_created(
+        clock, "org:1", "prj:1", exp1.id, snapshot, created_by="bob", idempotency_key="r1"
+    )
+    store.runs.save(run1)
+    other_run = run_created(clock, "org:2", "prj:9", exp_other.id, snapshot, created_by="bob")
+    store.runs.save(other_run)
+
+    runs = store.runs.list_for_org("org:1")
+    assert [r.id for r in runs] == [run1.id]
+    assert store.runs.list_for_org("org:2", limit=0) == []
+
+
 def test_execution_roundtrip(store: PostgresStore, clock: FrozenClock, catalog_versions) -> None:
     target_version, dataset_version = catalog_versions
     experiment, _ = create_experiment(
