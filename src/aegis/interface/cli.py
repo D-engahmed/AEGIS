@@ -181,6 +181,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     worker.add_argument("--json", action="store_true", help="Emit JSON output.")
     worker.set_defaults(func=_cmd_worker)
+
+    serve = sub.add_parser(
+        "serve",
+        help="Serve the FastAPI HTTP interface (Swagger UI at /docs).",
+    )
+    serve.add_argument("--host", default="0.0.0.0", help="Bind host.")
+    serve.add_argument("--port", type=int, default=8000, help="Bind port.")
+    serve.set_defaults(func=_cmd_serve)
     return parser
 
 
@@ -322,6 +330,16 @@ def _cmd_worker(args) -> int:
         poll_seconds=args.poll_seconds,
         json_out=args.json,
     )
+
+
+def _cmd_serve(args) -> int:
+    import uvicorn
+
+    from aegis.interface.app import create_app
+
+    container = Container.from_env()
+    uvicorn.run(create_app(container), host=args.host, port=args.port)
+    return 0
 
 
 def _cmd_evaluate(args) -> int:
