@@ -277,16 +277,37 @@ def run_worker(
     poll_seconds: float = 2.0,
     json_out: bool = False,
 ) -> int:
-    """Drain the queue, optionally polling forever (Ctrl-C stops cleanly)."""
+    """Drain the queue, optionally polling forever (Ctrl-C stops cleanly).
+
+    In watch mode a job that raises outside the engine's retry envelope (for
+    example a malformed target config) is abandoned by ``drain_queue``, reported
+    here, and redelivered later — the worker logs the error and keeps polling
+    instead of dying and crash-looping the deployment. One-shot mode exits 1 so
+    a wrapper sees the failure.
+    """
     while True:
         try:
             handled = drain_queue(cli, count=count)
+        except KeyboardInterrupt:
+            return 0
+        except Exception as exc:
             if json_out:
-                print(json.dumps({"processed": handled, "pending": cli.queue.pending()}))
+                print(
+                    json.dumps({"processed": 0, "pending": cli.queue.pending(), "error": str(exc)})
+                )
             else:
-                print(f"processed {handled} run(s); {cli.queue.pending()} pending")
+                print(f"worker error (job abandoned): {exc}")
             if not watch:
-                return 0
+                return 1
+            time.sleep(poll_seconds)
+            continue
+        if json_out:
+            print(json.dumps({"processed": handled, "pending": cli.queue.pending()}))
+        else:
+            print(f"processed {handled} run(s); {cli.queue.pending()} pending")
+        if not watch:
+            return 0
+        try:
             time.sleep(poll_seconds)
         except KeyboardInterrupt:
             return 0

@@ -162,6 +162,40 @@ def test_cli_worker_watch_loops_until_interrupt(monkeypatch, capsys) -> None:
     assert out.count("processed 0 run(s)") == 2
 
 
+def test_cli_worker_one_shot_reports_poison(capsys, monkeypatch) -> None:
+    """A job that escapes the engine's retry envelope fails fast with exit 1."""
+
+    def bad_drain(cli, count=None) -> int:
+        raise RuntimeError("bad target config")
+
+    monkeypatch.setattr("aegis.interface.cli.drain_queue", bad_drain)
+    code = main(["worker", "--json"])
+    assert code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error"] == "bad target config"
+
+
+def test_cli_worker_watch_survives_poison(monkeypatch, capsys) -> None:
+    """Watch mode reports the poisoned job, redelivers it, keeps polling."""
+    calls: dict[str, int] = {"n": 0}
+
+    def fake_drain(cli, count=None) -> int:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("bad target config")
+        if calls["n"] >= 3:
+            raise KeyboardInterrupt
+        return 0
+
+    monkeypatch.setattr("aegis.interface.cli.drain_queue", fake_drain)
+    code = main(["worker", "--watch", "--poll-seconds", "0.01"])
+    assert code == 0
+    assert calls["n"] == 3
+    out = capsys.readouterr().out
+    assert "worker error (job abandoned): bad target config" in out
+    assert out.count("processed 0 run(s)") == 1
+
+
 def test_cli_requires_command(capsys) -> None:
     with pytest.raises(SystemExit) as exc:
         main([])
