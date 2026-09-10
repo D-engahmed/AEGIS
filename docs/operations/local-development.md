@@ -104,6 +104,8 @@ aegis worker
 
 `aegis worker` claims jobs from the queue (`--count N` processes at most N runs), builds a REST target client from the run's registered target version, executes the run through the engine, links evidence, and completes the job. Claims are at-least-once: a crash redelivers the job, and replay is safe because run execution is idempotent and evidence linking is deduplicated per metric result. Add `worker --watch` (with `--poll-seconds`) to keep the process alive, polling the queue forever — the compose `aegis` service runs `worker --watch` so the stack is a live worker, not a restarting one-shot.
 
+`aegis probe` reports on runtime health and is the container healthcheck. When `AEGIS_DATABASE_URL` / `AEGIS_REDIS_URL` are set it also pings those stores (exit 0 only when every configured store answers), so a container is marked unhealthy instead of crash-looping silently while the stores are down.
+
 ## Running Migrations Locally
 
 Migrations are part of the schema-evolution discipline (`docs/data/schema-evolution.md`). The runner in `aegis.infrastructure.migrations` applies a versioned set of DDL steps inside transactions, tracked in `aegis_schema_versions`. Migrations run automatically when a PostgreSQL-backed container is constructed; to migrate an existing database explicitly:

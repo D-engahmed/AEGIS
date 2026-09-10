@@ -189,11 +189,47 @@ def _cmd_version(_args) -> int:
     return 0
 
 
+def _database_reachable(url: str) -> None:
+    """Raise if the configured PostgreSQL endpoint does not answer `SELECT 1`."""
+    import psycopg
+
+    with psycopg.connect(url, connect_timeout=2) as conn:
+        conn.execute("SELECT 1")
+
+
+def _queue_reachable(url: str) -> None:
+    """Raise if the configured Redis endpoint does not answer `PING`."""
+    import redis
+
+    redis.from_url(url, socket_connect_timeout=2).ping()
+
+
 def _cmd_probe(_args) -> int:
     from aegis.evaluation.plugins import list_evaluators
 
     evaluators = len(list_evaluators())
-    print(f"aegis {aegis.__version__}: import ok, {evaluators} evaluators registered")
+    problems: list[str] = []
+    stores_checked = 0
+    if os.environ.get("AEGIS_DATABASE_URL"):
+        try:
+            _database_reachable(os.environ["AEGIS_DATABASE_URL"])
+            stores_checked += 1
+        except Exception as exc:
+            problems.append(f"database unreachable: {exc}")
+    if os.environ.get("AEGIS_REDIS_URL"):
+        try:
+            _queue_reachable(os.environ["AEGIS_REDIS_URL"])
+            stores_checked += 1
+        except Exception as exc:
+            problems.append(f"queue unreachable: {exc}")
+    if problems:
+        print(
+            f"aegis {aegis.__version__}: UNHEALTHY ({evaluators} evaluators, "
+            f"{stores_checked} stores ok); " + "; ".join(problems)
+        )
+        return 1
+    storage = f", {stores_checked} store(s) reachable" if stores_checked else ""
+    print(f"aegis {aegis.__version__}: import ok, {evaluators} evaluators registered{storage}")
     return 0
 
 
