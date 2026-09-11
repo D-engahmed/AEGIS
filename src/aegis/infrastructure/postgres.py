@@ -592,7 +592,7 @@ class PostgresDataCatalog:
         with self._db.connect() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT * FROM dataset_versions"
-                " WHERE organization_id = %s ORDER BY created_at DESC",
+                " WHERE organization_id = %s ORDER BY dataset_id, label",
                 (organization_id,),
             )
             versions: list[DatasetVersion] = []

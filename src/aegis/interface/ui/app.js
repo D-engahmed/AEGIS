@@ -201,23 +201,28 @@ function navigate() {
     system: renderSystem,
   }[seg] || renderOverview;
 
-  route().catch((err) => {
-    const { status, detail } = parseError(err);
-    if (status === 401 || status === 403) {
-      main.innerHTML = renderLogin(detail, status);
-      return;
-    }
-    main.innerHTML = `
-      <div class="error-banner">
-        <span class="error-title">Request failed</span>
-        <div><code>HTTP ${esc(String(status || "network"))}</code><br>${esc(detail)}</div>
-      </div>`;
-  });
+  route()
+    .then((html) => { main.innerHTML = html; })
+    .catch((err) => {
+      const { status, detail } = parseError(err);
+      if (status === 401 || status === 403) {
+        main.innerHTML = renderLogin(detail, status);
+        return;
+      }
+      main.innerHTML = `
+        <div class="error-banner">
+          <span class="error-title">Request failed</span>
+          <div><code>HTTP ${esc(String(status || "network"))}</code><br>${esc(detail)}</div>
+        </div>`;
+    });
 }
 
 /* ---------------------------------------------------------------- boot */
 
 async function boot() {
+  window.addEventListener("hashchange", navigate);
+  document.addEventListener("click", onAction);
+  document.addEventListener("keydown", onKey);
   try {
     S.token = (await api("/security/dev-token")).token;
   } catch (err) {
@@ -227,14 +232,12 @@ async function boot() {
   }
   if (S.token) {
     setAuth("ok", "authenticated · dev token");
+    showNav(true);
     await refreshAll();
   } else {
     setAuth("bad", "dev login unavailable ");
     showNav(false);
   }
-  window.addEventListener("hashchange", navigate);
-  document.addEventListener("click", onAction);
-  document.addEventListener("keydown", onKey);
   navigate();
 }
 
@@ -564,7 +567,11 @@ async function renderRun(runId) {
         </table>
         ${verdict.override ? `<p class="cell-second mt-2 mb-0">Override: ${esc(verdict.override.reason)} by <span class="mono">${esc(verdict.override.overridden_by)}</span></p>` : ""}
       </div>
-    </section>` : "";
+    </section>` : `
+    <section class="card">
+      <div class="card-head"><h2>Policy gate</h2><span class="badge badge--info">no gates configured</span></div>
+      <div class="card-body"><p class="cell-second mb-0">This run is not gated — no policy gates are configured for the tenant.</p></div>
+    </section>`;
 
   const resultsTable = tableBase(
     `<th>Metric</th><th class="num">Score</th><th>Severity</th><th>Reason</th><th></th>`,
@@ -613,7 +620,7 @@ async function renderRun(runId) {
   const poller = ["queued", "running", "retrying", "partial"].includes(run.status);
   if (poller) {
     S.poll = setTimeout(() => {
-      if (location.hash === `#/run/${encodeURIComponent(runId)}`) navigate();
+      if (location.hash === `#/run/${runId}`) navigate();
     }, 2500);
   }
 
@@ -1130,7 +1137,7 @@ async function onAction(ev) {
       const text = $("#pii-input").value;
       if (!text.trim()) { toast("Enter text to redact", "", "warn"); return; }
       try {
-        const out = await api("/security/pii/redact", { json: { text } });
+        const out = await api("/security/pii/redact", { method: "POST", json: { text } });
         $("#pii-out").innerHTML = `
           <label class="field"><span class="field-label">Redacted</span>
             <pre class="code">${esc(out.redacted)}</pre></label>
