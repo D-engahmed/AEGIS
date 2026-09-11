@@ -34,6 +34,7 @@ aegis = ["interface/ui/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
     "unit: fast pure tests, no external services",
     "integration: requires PostgreSQL/Redis containers",
