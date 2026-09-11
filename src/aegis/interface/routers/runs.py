@@ -17,6 +17,20 @@ from .results import metric_result_out
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 
+@router.get("", response_model=list[RunOut])
+def list_runs(
+    actor: Annotated[Actor, Depends(require_permission(Permission.RUN_VIEW))],
+    container: Annotated[Container, Depends(get_container)],
+    experiment_id: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[RunOut]:
+    """List runs within the caller's tenant, newest first."""
+    views = container.run_service.list(
+        actor.organization, actor.context.user_id, experiment_id=experiment_id, limit=limit
+    )
+    return [RunOut(**asdict(v)) for v in views]
+
+
 @router.post("", response_model=RunOut, status_code=201)
 def submit_run(
     payload: RunSubmitIn,

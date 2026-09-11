@@ -17,9 +17,29 @@ from ..deps import (
     get_container,
     require_permission,
 )
-from ..schemas import ExperimentCreateIn, ExperimentOut, RunOut
+from ..schemas import ExperimentCreateIn, ExperimentOut, ExperimentSnapshotOut, RunOut
 
 router = APIRouter(prefix="/experiments", tags=["experiments"])
+
+
+def _experiment_out(experiment) -> ExperimentOut:
+    snapshot = experiment.snapshot
+    return ExperimentOut(
+        id=experiment.id,
+        organization_id=experiment.organization_id,
+        project_id=experiment.project_id,
+        name=experiment.name,
+        status=experiment.status.value,
+        created_at=experiment.created_at,
+        clone_of=experiment.clone_of,
+        snapshot=ExperimentSnapshotOut(
+            target_version_id=snapshot.target_version_id,
+            dataset_version_id=snapshot.dataset_version_id,
+            evaluator_version_ids=list(snapshot.evaluator_version_ids),
+            policy_version_id=snapshot.policy_version_id,
+            settings=dict(snapshot.settings),
+        ),
+    )
 
 
 @router.get("", response_model=list[ExperimentOut])
@@ -29,18 +49,7 @@ def list_experiments(
 ) -> list[ExperimentOut]:
     """List experiments within the caller's tenant, newest first."""
     experiments = container.experiment_service.list(actor.organization, actor.context.user_id)
-    return [
-        ExperimentOut(
-            id=e.id,
-            organization_id=e.organization_id,
-            project_id=e.project_id,
-            name=e.name,
-            status=e.status.value,
-            created_at=e.created_at,
-            clone_of=e.clone_of,
-        )
-        for e in experiments
-    ]
+    return [_experiment_out(e) for e in experiments]
 
 
 @router.get("/{experiment_id}/runs", response_model=list[RunOut])
@@ -84,15 +93,7 @@ def create_experiment(
         "experiment",
         experiment.id,
     )
-    return ExperimentOut(
-        id=experiment.id,
-        organization_id=experiment.organization_id,
-        project_id=experiment.project_id,
-        name=experiment.name,
-        status=experiment.status.value,
-        created_at=experiment.created_at,
-        clone_of=experiment.clone_of,
-    )
+    return _experiment_out(experiment)
 
 
 @router.get("/{experiment_id}", response_model=ExperimentOut)
@@ -105,15 +106,7 @@ def get_experiment(
     experiment = container.experiment_service.get(
         actor.organization, actor.context.user_id, experiment_id
     )
-    return ExperimentOut(
-        id=experiment.id,
-        organization_id=experiment.organization_id,
-        project_id=experiment.project_id,
-        name=experiment.name,
-        status=experiment.status.value,
-        created_at=experiment.created_at,
-        clone_of=experiment.clone_of,
-    )
+    return _experiment_out(experiment)
 
 
 @router.post("/{experiment_id}/clone", response_model=ExperimentOut, status_code=201)
@@ -127,15 +120,7 @@ def clone_experiment(
         actor.organization, actor.context.user_id, experiment_id
     )
     audit(container, actor, "experiment.cloned", "experiment", experiment.id)
-    return ExperimentOut(
-        id=experiment.id,
-        organization_id=experiment.organization_id,
-        project_id=experiment.project_id,
-        name=experiment.name,
-        status=experiment.status.value,
-        created_at=experiment.created_at,
-        clone_of=experiment.clone_of,
-    )
+    return _experiment_out(experiment)
 
 
 @router.post("/{experiment_id}/start", response_model=ExperimentOut)
@@ -149,15 +134,7 @@ def start_experiment(
         actor.organization, actor.context.user_id, experiment_id
     )
     audit(container, actor, "experiment.started", "experiment", experiment.id)
-    return ExperimentOut(
-        id=experiment.id,
-        organization_id=experiment.organization_id,
-        project_id=experiment.project_id,
-        name=experiment.name,
-        status=experiment.status.value,
-        created_at=experiment.created_at,
-        clone_of=experiment.clone_of,
-    )
+    return _experiment_out(experiment)
 
 
 __all__ = ["router"]

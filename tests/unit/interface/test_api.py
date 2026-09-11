@@ -87,7 +87,15 @@ def test_dashboard_is_served_at_root(api) -> None:
     resp = client.get("/")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
-    assert "AEGIS Dashboard" in resp.text
+    assert "AEGIS" in resp.text
+    assert "/static/ui/styles.css" in resp.text
+    assert "/static/ui/app.js" in resp.text
+
+
+def test_dashboard_static_assets_are_served(api) -> None:
+    _, client = api
+    assert client.get("/static/ui/styles.css").status_code == 200
+    assert client.get("/static/ui/app.js").status_code == 200
 
 
 def test_dev_token_disabled_by_default(api) -> None:

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from aegis.domain import (
+    Dataset,
     DatasetVersion,
     EvidenceSummary,
     ExecutionRecord,
@@ -19,6 +20,7 @@ from aegis.domain import (
     FailureCode,
     MetricResult,
     Run,
+    Target,
     TargetVersion,
 )
 from aegis.domain.time import Clock
@@ -125,6 +127,18 @@ class DataCatalog(Protocol):
     def register_target(self, target_version: TargetVersion) -> None: ...
 
     def register_dataset(self, dataset_version: DatasetVersion) -> None: ...
+
+    def register_target_record(self, target: Target) -> None: ...
+
+    def register_dataset_record(self, dataset: Dataset) -> None: ...
+
+    def get_target(self, target_id: str) -> Target: ...
+
+    def get_dataset(self, dataset_id: str) -> Dataset: ...
+
+    def list_target_versions(self, organization_id: str) -> list[TargetVersion]: ...
+
+    def list_dataset_versions(self, organization_id: str) -> list[DatasetVersion]: ...
 
 
 @runtime_checkable

@@ -33,6 +33,70 @@ class ExperimentCreateIn(ApiModel):
     snapshot: ExperimentSnapshotIn
 
 
+class TestCaseIn(ApiModel):
+    input: Any
+    expected: Any | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TargetRegisterIn(ApiModel):
+    """Register a target application and its first configuration version."""
+
+    project_id: str
+    name: str
+    target_type: str = "llm_application"
+    label: str = "1.0.0"
+    config: dict[str, Any] = Field(default_factory=dict)
+    commit_sha: str | None = None
+
+
+class DatasetRegisterIn(ApiModel):
+    """Register a dataset and a draft version with its initial test cases."""
+
+    project_id: str
+    name: str
+    label: str = "1.0.0"
+    test_cases: list[TestCaseIn] = Field(default_factory=list)
+
+
+class CatalogTargetOut(ApiModel):
+    id: str
+    target_id: str
+    project_id: str
+    name: str
+    target_type: str
+    label: str
+    config: dict[str, Any]
+    created_at: datetime
+    referenced: bool
+
+
+class CatalogDatasetOut(ApiModel):
+    id: str
+    dataset_id: str
+    project_id: str
+    name: str
+    label: str
+    status: str
+    test_case_count: int
+    created_at: datetime
+
+
+class CatalogOut(ApiModel):
+    targets: list[CatalogTargetOut]
+    datasets: list[CatalogDatasetOut]
+
+
+class ExperimentSnapshotOut(ApiModel):
+    """The immutable configuration pinned at experiment creation time."""
+
+    target_version_id: str
+    dataset_version_id: str
+    evaluator_version_ids: list[str] = Field(default_factory=list)
+    policy_version_id: str | None = None
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
 class ExperimentOut(ApiModel):
     id: str
     organization_id: str
@@ -41,6 +105,7 @@ class ExperimentOut(ApiModel):
     status: str
     created_at: datetime
     clone_of: str | None = None
+    snapshot: ExperimentSnapshotOut | None = None
 
 
 class RunOut(ApiModel):
@@ -171,10 +236,15 @@ class GateOverrideIn(ApiModel):
 __all__ = [
     "ApiModel",
     "ArtifactRefOut",
+    "CatalogDatasetOut",
+    "CatalogOut",
+    "CatalogTargetOut",
+    "DatasetRegisterIn",
     "EvidenceRecordOut",
     "ExperimentCreateIn",
     "ExperimentOut",
     "ExperimentSnapshotIn",
+    "ExperimentSnapshotOut",
     "GateDecisionOut",
     "GateOverrideIn",
     "HealthCheckOut",
@@ -186,6 +256,8 @@ __all__ = [
     "RunOut",
     "RunSubmitIn",
     "RunVerdictOut",
+    "TargetRegisterIn",
+    "TestCaseIn",
     "TokenOut",
     "TrendPointOut",
     "TrendReportOut",

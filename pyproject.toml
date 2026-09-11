@@ -30,7 +30,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-aegis = ["interface/ui/*.html"]
+aegis = ["interface/ui/*.html", "interface/ui/*.css", "interface/ui/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -10,10 +10,12 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .container import Container
 from .errors import register_exception_handlers
 from .routers.analysis import router as analysis_router
+from .routers.catalog import router as catalog_router
 from .routers.evidence import router as evidence_router
 from .routers.experiments import router as experiments_router
 from .routers.observability import health_router
@@ -47,10 +49,13 @@ def create_app(container: Container | None = None) -> FastAPI:
     app.include_router(runs_router)
     app.include_router(evidence_router)
     app.include_router(analysis_router)
+    app.include_router(catalog_router)
     app.include_router(security_router)
     app.include_router(policy_router)
     app.include_router(observability_router)
     app.include_router(health_router)
+
+    app.mount("/static/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
 
     @app.get("/", include_in_schema=False)
     def dashboard() -> FileResponse:

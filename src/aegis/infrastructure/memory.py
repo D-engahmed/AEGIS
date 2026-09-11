@@ -14,12 +14,14 @@ from datetime import UTC, datetime
 from aegis.application.ports import CancellationRegistry
 from aegis.domain import (
     Conflict,
+    Dataset,
     DatasetVersion,
     ExecutionRecord,
     Experiment,
     MetricResult,
     NotFound,
     Run,
+    Target,
     TargetVersion,
 )
 from aegis.domain.identifiers import new_id
@@ -122,24 +124,58 @@ class MemoryResultRepository:
 
 class InMemoryDataCatalog:
     def __init__(self) -> None:
-        self._targets: dict[str, TargetVersion] = {}
-        self._datasets: dict[str, DatasetVersion] = {}
+        self._targets: dict[str, Target] = {}
+        self._target_versions: dict[str, TargetVersion] = {}
+        self._datasets: dict[str, Dataset] = {}
+        self._dataset_versions: dict[str, DatasetVersion] = {}
 
     def register_target(self, version: TargetVersion) -> None:
-        self._targets[version.id] = version
+        self._target_versions[version.id] = version
 
     def register_dataset(self, version: DatasetVersion) -> None:
-        self._datasets[version.id] = version
+        self._dataset_versions[version.id] = version
+
+    def register_target_record(self, target: Target) -> None:
+        self._targets[target.id] = target
+
+    def register_dataset_record(self, dataset: Dataset) -> None:
+        self._datasets[dataset.id] = dataset
+
+    def get_target(self, target_id: str) -> Target:
+        try:
+            return self._targets[target_id]
+        except KeyError:
+            raise NotFound(f"target {target_id!r} not found") from None
+
+    def get_dataset(self, dataset_id: str) -> Dataset:
+        try:
+            return self._datasets[dataset_id]
+        except KeyError:
+            raise NotFound(f"dataset {dataset_id!r} not found") from None
+
+    def list_target_versions(self, organization_id: str) -> list[TargetVersion]:
+        return sorted(
+            (v for v in self._target_versions.values() if v.organization_id == organization_id),
+            key=lambda v: v.created_at,
+            reverse=True,
+        )
+
+    def list_dataset_versions(self, organization_id: str) -> list[DatasetVersion]:
+        return sorted(
+            (v for v in self._dataset_versions.values() if v.organization_id == organization_id),
+            key=lambda v: (v.dataset_id, str(v.label)),
+            reverse=True,
+        )
 
     def load_target_version(self, target_version_id: str) -> TargetVersion:
         try:
-            return self._targets[target_version_id]
+            return self._target_versions[target_version_id]
         except KeyError:
             raise NotFound(f"target version {target_version_id!r} not found") from None
 
     def load_dataset_version(self, dataset_version_id: str) -> DatasetVersion:
         try:
-            return self._datasets[dataset_version_id]
+            return self._dataset_versions[dataset_version_id]
         except KeyError:
             raise NotFound(f"dataset version {dataset_version_id!r} not found") from None
 

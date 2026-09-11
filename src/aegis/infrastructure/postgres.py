@@ -20,6 +20,7 @@ import psycopg
 
 from aegis.domain import (
     Conflict,
+    Dataset,
     DatasetVersion,
     ExecutionRecord,
     Experiment,
@@ -29,6 +30,7 @@ from aegis.domain import (
     MetricResult,
     NotFound,
     Run,
+    Target,
     TargetVersion,
 )
 from aegis.domain.execution import (
@@ -509,6 +511,100 @@ def _metric_from(row) -> MetricResult:
 class PostgresDataCatalog:
     def __init__(self, db: Psql) -> None:
         self._db = db
+
+    def register_target_record(self, target: Target) -> None:
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO targets
+                    (id, organization_id, project_id, name, target_type, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (
+                    target.id,
+                    target.organization_id,
+                    target.project_id,
+                    target.name,
+                    target.target_type.value,
+                    target.created_at,
+                ),
+            )
+
+    def register_dataset_record(self, dataset: Dataset) -> None:
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO datasets
+                    (id, organization_id, project_id, name, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (
+                    dataset.id,
+                    dataset.organization_id,
+                    dataset.project_id,
+                    dataset.name,
+                    dataset.created_at,
+                ),
+            )
+
+    def get_target(self, target_id: str) -> Target:
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM targets WHERE id = %s", (target_id,))
+            row = cur.fetchone()
+        if row is None:
+            raise NotFound(f"target {target_id!r} not found")
+        from aegis.domain.targets import TargetType
+
+        return Target(
+            id=row[0],
+            organization_id=row[1],
+            project_id=row[2],
+            name=row[3],
+            target_type=TargetType(row[4]),
+            created_at=row[5],
+        )
+
+    def get_dataset(self, dataset_id: str) -> Dataset:
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM datasets WHERE id = %s", (dataset_id,))
+            row = cur.fetchone()
+        if row is None:
+            raise NotFound(f"dataset {dataset_id!r} not found")
+        return Dataset(
+            id=row[0],
+            organization_id=row[1],
+            project_id=row[2],
+            name=row[3],
+            created_at=row[4],
+        )
+
+    def list_target_versions(self, organization_id: str) -> list[TargetVersion]:
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM target_versions WHERE organization_id = %s ORDER BY created_at DESC",
+                (organization_id,),
+            )
+            return [_target_version_from(row) for row in cur.fetchall()]
+
+    def list_dataset_versions(self, organization_id: str) -> list[DatasetVersion]:
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM dataset_versions"
+                " WHERE organization_id = %s ORDER BY created_at DESC",
+                (organization_id,),
+            )
+            versions: list[DatasetVersion] = []
+            for row in cur.fetchall():
+                with self._db.connect() as conn2, conn2.cursor() as cur2:
+                    cur2.execute(
+                        "SELECT * FROM test_cases WHERE dataset_version_id = %s ORDER BY seq",
+                        (row[0],),
+                    )
+                    test_rows = cur2.fetchall()
+                versions.append(_dataset_version_from(row, test_rows))
+            return versions
 
     def register_target(self, version: TargetVersion) -> None:
         with self._db.connect() as conn, conn.cursor() as cur:
