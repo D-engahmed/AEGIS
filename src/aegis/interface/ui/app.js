@@ -10,9 +10,11 @@ const S = {
   experiments: [],
   runs: [],
   catalog: { targets: [], datasets: [] },
+  evaluators: [], // discoverable scoring plugins (GET /evaluators)
   hide: null, // last hide (bool) when dev login unavailable
   poll: null, // run-detail poller
   metricNames: new Set(),
+  analysis: {}, // persisted analysis picks: baseline, current, metric
 };
 
 const API = "";
@@ -242,14 +244,16 @@ async function boot() {
 }
 
 async function refreshAll() {
-  const [experiments, runs, catalog] = await Promise.all([
+  const [experiments, runs, catalog, evaluators] = await Promise.all([
     api("/experiments").catch(() => []),
     api("/runs").catch(() => []),
     api("/catalog").catch(() => ({ targets: [], datasets: [] })),
+    api("/evaluators").catch(() => []),
   ]);
   S.experiments = experiments;
   S.runs = runs;
   S.catalog = catalog;
+  S.evaluators = evaluators;
 }
 
 /* ---------------------------------------------------------------- components */
@@ -351,7 +355,7 @@ async function renderOverview() {
       ${stat("Experiments", experiments.length, `${experiments.filter((e) => e.status === "running").length} running`)}
       ${stat("Runs", runs.length, `${active.length} in flight`)}
       ${stat("Last run", last ? badge(last.status) : "—", last ? time(last.finished_at || last.created_at) : "no runs yet")}
-      ${stat("API health", healthBadge, health ? health.checks.map((c) => c.name).join(" · ") : "unauthenticated when offline")}
+      ${stat("API health", healthBadge, health ? health.checks.map((c) => c.name).join(" · ") : "health checks unreachable")}
     </div>
     <div class="detail-grid">
       <section class="card card-flush" aria-label="Recent runs">
@@ -709,17 +713,30 @@ async function renderAnalysis() {
     results.forEach((r) => S.metricNames.add(r.metric_name));
   }
   const metrics = [...S.metricNames];
-  const metric = metrics[0] || "exact_match";
+
+  const settled = runs.filter((r) => ["succeeded", "partial"].includes(r.status));
+  const valid = (id) => id && runs.some((r) => r.run_id === id);
+  const picked = S.analysis || {};
+
+  let baseline = valid(picked.baseline)
+    ? picked.baseline
+    : (settled[0] ? settled[0].run_id : "");
+  let current = baseline && valid(picked.current) && picked.current !== baseline
+    ? picked.current
+    : ((settled.find((r) => r.run_id !== baseline) || {}).run_id || "");
+  if (!baseline || baseline === current) { baseline = ""; current = ""; }
+  const metric = (picked.metric && metrics.includes(picked.metric))
+    ? picked.metric
+    : (metrics[0] || "exact_match");
 
   const fmtRun = (r) => {
     const exp = S.experiments.find((e) => e.id === r.experiment_id) || {};
     return `${exp.name ? exp.name + " · " : ""}${short(r.run_id, 12)} · ${r.status}`;
   };
 
-  const runOptions = runs.map((r) => `<option value="${esc(r.run_id)}">${esc(fmtRun(r))}</option>`).join("");
-
-  const baseline = runs.find((r) => ["succeeded", "partial"].includes(r.status));
-  const current = runs.find((r) => r !== baseline && r.run_id !== (baseline && baseline.run_id));
+  const runOptions = (selId) => runs
+    .map((r) => `<option value="${esc(r.run_id)}" ${r.run_id === selId ? "selected" : ""}>${esc(fmtRun(r))}</option>`)
+    .join("");
 
   let regressionHtml = `<div class="empty">Pick a baseline and current run to detect regressions.</div>`;
   let trendHtml = `<div class="empty">Pick a metric to see its trend.</div>`;
@@ -727,7 +744,7 @@ async function renderAnalysis() {
 
   if (baseline && current) {
     const [reg, trend, failures] = await Promise.all([
-      api(`/analysis/regression?baseline_run_id=${encodeURIComponent(baseline.run_id)}&current_run_id=${encodeURIComponent(current.run_id)}`).catch(() => null),
+      api(`/analysis/regression?baseline_run_id=${encodeURIComponent(baseline)}&current_run_id=${encodeURIComponent(current)}`).catch(() => null),
       api(`/analysis/trend/${encodeURIComponent(metric)}?run_ids=${runs.slice(0, 8).map((r) => encodeURIComponent(r.run_id)).join("&run_ids=")}`).catch(() => null),
       api(`/analysis/failures?run_ids=${runs.slice(0, 8).map((r) => encodeURIComponent(r.run_id)).join("&run_ids=")}`).catch(() => null),
     ]);
@@ -792,18 +809,19 @@ async function renderAnalysis() {
       <div class="card-body">
         <div class="field-row cols-2">
           <label class="field"><span class="field-label">Baseline run</span>
-            <select class="select" id="an-baseline">${runOptions}</select></label>
+            <select class="select" id="an-baseline">${runOptions(baseline)}</select></label>
           <label class="field"><span class="field-label">Current run</span>
-            <select class="select" id="an-current">${runOptions}</select></label>
+            <select class="select" id="an-current">${runOptions(current)}</select></label>
         </div>
-        <div class="mt-2"><button class="btn btn--primary" data-action="analysis-run">Analyze</button></div>
+        <div class="mt-2"><button class="btn btn--primary" data-action="analysis-run">Analyze</button>
+          <span class="cell-second">Analyze re-runs regression/trend/failure panels for the selected runs.</span></div>
       </div>
       <div class="card-body">${regressionHtml}</div>
     </section>
     <div class="detail-grid">
       <section class="card card-flush" aria-label="Trend">
         <div class="card-head"><h2>Trend</h2>
-          <select class="select" id="an-metric" style="max-width:220px">
+          <select class="select" id="an-metric" data-action="analysis-metric" style="max-width:220px" aria-label="Trend metric">
             ${metrics.map((m) => `<option value="${esc(m)}" ${m === metric ? "selected" : ""}>${esc(m)}</option>`).join("")}
           </select></div>
         ${trendHtml}
@@ -851,6 +869,8 @@ async function renderAudit() {
 async function renderSystem() {
   let health = null;
   try { health = await api("/health/live"); } catch { /* offline */ }
+  let evaluators = S.evaluators;
+  try { evaluators = await api("/evaluators"); S.evaluators = evaluators; } catch { /* keep cache */ }
 
   const checks = health ? health.checks.map((c) => `
     <tr>
@@ -859,14 +879,31 @@ async function renderSystem() {
       <td class="cell-second">${esc(c.detail || "")}</td>
     </tr>`).join("") : `<tr><td class="empty">Health endpoint unreachable without authentication.</td></tr>`;
 
+  const evaluatorRows = tableBase(
+    `<th>Evaluator</th><th>Version</th><th>Metrics</th><th>Severity</th><th>Kind</th>`,
+    evaluators.map((e) => `
+      <tr>
+        <td class="cell-main mono">${esc(e.identity)}<br><span class="cell-second">${esc(e.display_name)}</span></td>
+        <td class="mono">${esc(e.version)}</td>
+        <td class="cell-second mono">${esc((e.metrics || []).join(", ") || "—")}</td>
+        <td>${badge(e.severity)}</td>
+        <td>${e.requires_trace ? badge("info", "trace") : badge("ok", "deterministic")}</td>
+      </tr>`),
+    empty("No evaluators discoverable.", "The evaluator inventory populates from the plugin registry at runtime."));
+
   return `
-    ${pageHead("System", "Health, security tools, and programmatic access.", "")}
+    ${pageHead("System", "Health, evaluator inventory, security tools, and programmatic access.", "")}
     <section class="card card-flush" aria-label="Health">
       <div class="card-head"><h2>Health</h2>${health ? badge(health.overall) : badge("error", "unreachable")}</div>
       <div class="card-body"><div class="table-wrap"><table class="data">
         <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
         <tbody>${checks}</tbody>
       </table></div></div>
+    </section>
+    <section class="card card-flush" aria-label="Evaluator inventory">
+      <div class="card-head"><h2>Evaluators</h2>
+        <span class="cell-second">${evaluators.length} plugin(s) · deterministic + trajectory</span></div>
+      <div class="card-body">${evaluatorRows}</div>
     </section>
     <section class="card" aria-label="PII redaction tool">
       <div class="card-head"><h2>PII redaction</h2></div>
@@ -919,6 +956,18 @@ function newExperimentModal() {
     ? datasets.map((d) => `<option value="${esc(d.id)}">${esc(d.name)} · v${esc(d.label)} (${d.test_case_count} cases)</option>`).join("")
     : `<option value="">No datasets registered</option>`;
 
+  const expEvals = (S.evaluators || []).length
+    ? `<div id="exp-evaluator-list" class="eval-picker">
+        ${S.evaluators.map((e) => `
+          <label class="eval-opt">
+            <input type="checkbox" name="exp-evaluator" value="${esc(e.identity)}" ${e.identity === DEFAULT_EVALUATOR ? "checked" : ""} />
+            <span class="eval-id mono">${esc(e.identity)}</span>
+            <span class="cell-second">${esc((e.metrics || []).join(", ") || "—")}</span>
+            ${e.requires_trace ? `<span class="badge badge--info">trace</span>` : ""}
+          </label>`).join("")}
+      </div>`
+    : `<input class="input" id="exp-evaluators" value="${DEFAULT_EVALUATOR}" autocomplete="off" />`;
+
   openModal({
     title: "New experiment",
     body: `
@@ -936,8 +985,8 @@ function newExperimentModal() {
           <select class="select" id="exp-dataset">${datasetOptions}</select></label>
       </div>
       <label class="field"><span class="field-label">Evaluators</span>
-        <input class="input" id="exp-evaluators" value="${DEFAULT_EVALUATOR}" autocomplete="off" />
-        <span class="field-hint">Comma-separated evaluator ids. Default is deterministic exact-match.</span></label>
+        ${expEvals}
+        <span class="field-hint">Pick the scoring plugins to run. The list is discovered from the plugin registry; exact-match is pinned by default.</span></label>
       <label class="field"><span class="field-label">Policy version id <span class="cell-second">(optional)</span></span>
         <input class="input" id="exp-policy" placeholder="none" autocomplete="off" /></label>
       <div id="exp-error" class="field-error hidden"></div>`,
@@ -1127,12 +1176,15 @@ async function onAction(ev) {
       const base = $("#an-baseline").value;
       const cur = $("#an-current").value;
       if (!base || !cur || base === cur) { toast("Choose two different runs", "", "warn"); return; }
-      try {
-        const reg = await api(`/analysis/regression?baseline_run_id=${encodeURIComponent(base)}&current_run_id=${encodeURIComponent(cur)}`);
-        toast("Regression analyzed", "", "success");
-      } catch (err) { toast("Regression failed", err.message, "error"); }
+      S.analysis = Object.assign({}, S.analysis, { baseline: base, current: cur });
+      toast("Regression analyzed", "", "success");
+      navigate();
       break;
     }
+    case "analysis-metric":
+      S.analysis = Object.assign({}, S.analysis, { metric: el.value });
+      navigate();
+      break;
     case "pii-redact": {
       const text = $("#pii-input").value;
       if (!text.trim()) { toast("Enter text to redact", "", "warn"); return; }
@@ -1157,7 +1209,16 @@ async function createExperimentFromForm() {
   const project = $("#exp-project").value.trim();
   const target = $("#exp-target").value;
   const dataset = $("#exp-dataset").value;
-  const evaluators = $("#exp-evaluators").value.split(",").map((s) => s.trim()).filter(Boolean);
+  const checkedEvals = Array.from(document.querySelectorAll("#exp-evaluator-list input:checked"));
+  let evaluators;
+  if (checkedEvals.length) {
+    evaluators = checkedEvals.map((i) => i.value);
+  } else {
+    const free = $("#exp-evaluators");
+    evaluators = free
+      ? free.value.split(",").map((s) => s.trim()).filter(Boolean)
+      : [DEFAULT_EVALUATOR];
+  }
   const policy = $("#exp-policy").value.trim() || null;
 
   if (!name || !project) { errBox.textContent = "Name and project id are required."; errBox.classList.remove("hidden"); return; }

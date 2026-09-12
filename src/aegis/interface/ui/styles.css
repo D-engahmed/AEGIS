@@ -326,6 +326,21 @@ pre.code {
 .span-row { display: grid; grid-template-columns: 28px 1fr auto; gap: var(--space-2); align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .span-row:last-child { border-bottom: 0; }
 
+.eval-picker {
+  display: grid; gap: 4px; max-height: 220px; overflow-y: auto;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: var(--space-2); background: var(--bg-elevated);
+}
+.eval-opt {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm);
+  cursor: pointer; font-size: 13px;
+}
+.eval-opt:hover { background: var(--surface-2); }
+.eval-opt input { accent-color: var(--accent); width: 14px; height: 14px; }
+.eval-id { font-weight: 600; overflow-wrap: anywhere; }
+.eval-opt .badge { flex: none; }
+
 .hidden { display: none !important; }
 .noscript-banner { padding: var(--space-4); background: var(--surface); border-bottom: 1px solid var(--border); color: var(--text-muted); }
 
