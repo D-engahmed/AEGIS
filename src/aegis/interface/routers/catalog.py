@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from aegis.domain.datasets import add_test_case, create_dataset, create_dataset_version
 from aegis.domain.targets import TargetType, create_target, create_target_version
@@ -69,6 +69,58 @@ def list_catalog(
     targets = [_target_out(container, v) for v in container.catalog.list_target_versions(org)]
     datasets = [_dataset_out(container, v) for v in container.catalog.list_dataset_versions(org)]
     return CatalogOut(targets=targets, datasets=datasets)
+
+
+@router.get("/targets", response_model=list[CatalogTargetOut])
+def list_targets(
+    actor: Annotated[Actor, Depends(require_permission(Permission.EXPERIMENT_VIEW))],
+    container: Annotated[Container, Depends(get_container)],
+) -> list[CatalogTargetOut]:
+    """List registered target versions within the tenant."""
+    actor.organization.require_membership(actor.context.user_id)
+    org = actor.context.organization_id
+    return [_target_out(container, v) for v in container.catalog.list_target_versions(org)]
+
+
+@router.get("/datasets", response_model=list[CatalogDatasetOut])
+def list_datasets(
+    actor: Annotated[Actor, Depends(require_permission(Permission.EXPERIMENT_VIEW))],
+    container: Annotated[Container, Depends(get_container)],
+) -> list[CatalogDatasetOut]:
+    """List registered dataset versions within the tenant."""
+    actor.organization.require_membership(actor.context.user_id)
+    org = actor.context.organization_id
+    return [_dataset_out(container, v) for v in container.catalog.list_dataset_versions(org)]
+
+
+@router.get("/targets/{target_version_id}", response_model=CatalogTargetOut)
+def get_target(
+    target_version_id: str,
+    actor: Annotated[Actor, Depends(require_permission(Permission.EXPERIMENT_VIEW))],
+    container: Annotated[Container, Depends(get_container)],
+) -> CatalogTargetOut:
+    """Fetch a single target version."""
+    actor.organization.require_membership(actor.context.user_id)
+    org = actor.context.organization_id
+    version = container.catalog.load_target_version(target_version_id)
+    if version.organization_id != org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return _target_out(container, version)
+
+
+@router.get("/datasets/{dataset_version_id}", response_model=CatalogDatasetOut)
+def get_dataset(
+    dataset_version_id: str,
+    actor: Annotated[Actor, Depends(require_permission(Permission.EXPERIMENT_VIEW))],
+    container: Annotated[Container, Depends(get_container)],
+) -> CatalogDatasetOut:
+    """Fetch a single dataset version."""
+    actor.organization.require_membership(actor.context.user_id)
+    org = actor.context.organization_id
+    version = container.catalog.load_dataset_version(dataset_version_id)
+    if version.organization_id != org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return _dataset_out(container, version)
 
 
 @router.post("/targets", response_model=CatalogTargetOut, status_code=201)

@@ -184,7 +184,70 @@ def _seed_metric_results(container, n: int, *, base: float, delta: float = 0.0) 
     container.results.persist(results)
 
 
-def test_analysis_endpoints_return_reports(api) -> None:
+def test_catalog_collection_endpoints(api) -> None:
+    container, client = api
+    headers = _admin_headers(container)
+    _register_sample(container, client)
+
+    targets = client.get("/catalog/targets", headers=headers).json()
+    assert len(targets) == 1 and targets[0]["name"] == "echo"
+    datasets = client.get("/catalog/datasets", headers=headers).json()
+    assert len(datasets) == 1 and datasets[0]["name"] == "qa"
+    assert datasets[0]["test_case_count"] == 1
+
+
+def test_catalog_item_fetch_and_tenant_scope(api) -> None:
+    container, client = api
+    headers = _admin_headers(container)
+    _register_sample(container, client)
+    catalog = client.get("/catalog", headers=headers).json()
+    target_id = catalog["targets"][0]["id"]
+    dataset_id = catalog["datasets"][0]["id"]
+
+    target = client.get(f"/catalog/targets/{target_id}", headers=headers)
+    assert target.status_code == 200, target.text
+    assert target.json()["target_id"] == catalog["targets"][0]["target_id"]
+
+    dataset = client.get(f"/catalog/datasets/{dataset_id}", headers=headers)
+    assert dataset.status_code == 200, dataset.text
+    assert dataset.json()["dataset_id"] == catalog["datasets"][0]["dataset_id"]
+
+    other = _admin_headers(container, "org:2")
+    assert client.get(f"/catalog/targets/{target_id}", headers=other).status_code == 404
+    assert client.get(f"/catalog/datasets/{dataset_id}", headers=other).status_code == 404
+    assert client.get("/catalog/targets/nope", headers=headers).status_code == 404
+    assert client.get("/catalog/datasets/nope", headers=headers).status_code == 404
+
+
+def test_evaluators_endpoint_lists_every_plugin(api) -> None:
+    container, client = api
+    headers = _admin_headers(container)
+
+    specs = client.get("/evaluators", headers=headers).json()
+    identities = {s["identity"] for s in specs}
+    assert "aegis/deterministic/exact_match" in identities
+    assert "aegis/deterministic/schema" in identities
+    assert "aegis/deterministic/latency" in identities
+    assert "aegis/trajectory/step_budget" in identities
+    assert "aegis/trajectory/tool_selection" in identities
+    assert "aegis/trajectory/recovery" in identities
+
+    by_identity = {s["identity"]: s for s in specs}
+    exact = by_identity["aegis/deterministic/exact_match"]
+    assert exact["metrics"] == ["exact_match"]
+    assert exact["requires_trace"] is False
+    trajectory = by_identity["aegis/trajectory/recovery"]
+    assert trajectory["metrics"] == ["recovery"]
+    assert trajectory["requires_trace"] is True
+    assert [s["identity"] for s in specs] == sorted(s["identity"] for s in specs)
+
+
+def test_evaluators_endpoint_reachable_by_read_role(api) -> None:
+    container, client = api
+    token = container.auth.issue("user:bob", "org:1", Role.ANALYST)
+    resp = client.get("/evaluators", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()
     container, client = api
     headers = _admin_headers(container)
     _seed_metric_results(container, 12, base=0.9)

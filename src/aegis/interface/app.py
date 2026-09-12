@@ -16,6 +16,7 @@ from .container import Container
 from .errors import register_exception_handlers
 from .routers.analysis import router as analysis_router
 from .routers.catalog import router as catalog_router
+from .routers.evaluators import router as evaluators_router
 from .routers.evidence import router as evidence_router
 from .routers.experiments import router as experiments_router
 from .routers.observability import health_router
@@ -50,6 +51,7 @@ def create_app(container: Container | None = None) -> FastAPI:
     app.include_router(evidence_router)
     app.include_router(analysis_router)
     app.include_router(catalog_router)
+    app.include_router(evaluators_router)
     app.include_router(security_router)
     app.include_router(policy_router)
     app.include_router(observability_router)

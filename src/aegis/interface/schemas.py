@@ -87,6 +87,18 @@ class CatalogOut(ApiModel):
     datasets: list[CatalogDatasetOut]
 
 
+class EvaluatorSpecOut(ApiModel):
+    """A discoverable scoring plugin (deterministic or trajectory)."""
+
+    identity: str
+    version: str
+    display_name: str
+    metrics: list[str]
+    requires_trace: bool = False
+    severity: str = "info"
+    unit: str | None = None
+
+
 class ExperimentSnapshotOut(ApiModel):
     """The immutable configuration pinned at experiment creation time."""
 
@@ -241,6 +253,7 @@ __all__ = [
     "CatalogTargetOut",
     "DatasetRegisterIn",
     "EvidenceRecordOut",
+    "EvaluatorSpecOut",
     "ExperimentCreateIn",
     "ExperimentOut",
     "ExperimentSnapshotIn",
