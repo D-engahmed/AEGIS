@@ -46,6 +46,7 @@ from aegis.infrastructure.memory import (
 from aegis.observability.cost import InMemoryCostTracker
 from aegis.observability.health import HealthAggregator, StaticHealthCheck
 from aegis.observability.models import HealthStatus
+from aegis.observability.otlp import OtlpSpanExporter
 from aegis.observability.preservation import TracePreservationEngine
 from aegis.observability.run_tracing import EvaluationTracerProvider
 from aegis.observability.tracing import InMemoryExporter, InMemoryTracerProvider
@@ -169,7 +170,10 @@ class Container:
 
         self.evidence_graph = InMemoryEvidenceGraph()
 
-        self.tracer_provider = InMemoryTracerProvider(InMemoryExporter())
+        otlp_endpoint = os.environ.get("AEGIS_OTEL_ENDPOINT")
+        self.tracer_provider = InMemoryTracerProvider(
+            OtlpSpanExporter(otlp_endpoint) if otlp_endpoint else InMemoryExporter()
+        )
         self.preservation = TracePreservationEngine()
         self.evaluation_tracers = EvaluationTracerProvider(self.preservation)
 

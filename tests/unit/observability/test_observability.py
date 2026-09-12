@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from datetime import UTC, datetime
 
+import httpx
 import pytest
+from httpx import MockTransport, Response
 
 from aegis.observability.correlation import CorrelationContext
 from aegis.observability.cost import InMemoryCostTracker
@@ -228,6 +231,124 @@ def test_noop_tracer_does_nothing():
     span.set_attribute("a", 1)
     span.end("ok")
     assert tracer.flush("run:1") is None
+
+
+def test_otlp_exporter_posts_json_traces_to_collector():
+    from aegis.observability.otlp import OtlpSpanExporter
+
+    captured: dict[str, object] = {}
+
+    def handler(request):
+        captured["url"] = str(request.url)
+        captured["content_type"] = request.headers.get("content-type")
+        captured["body"] = json.loads(request.content)
+        return Response(200)
+
+    client = httpx.Client(transport=MockTransport(handler))
+    exporter = OtlpSpanExporter("http://collector:4318", client=client)
+    exporter.export_span(_evaluation_span())
+
+    assert exporter.flush() is True
+    assert captured["url"] == "http://collector:4318/v1/traces"
+    assert captured["content_type"] == "application/json"
+    body = captured["body"]
+    assert len(body["resourceSpans"]) == 1
+    resource = body["resourceSpans"][0]["resource"]
+    assert {"key": "service.name", "value": {"stringValue": "aegis"}} in resource["attributes"]
+    span = body["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    assert span["name"] == "evaluate"
+    assert span["kind"] == 1
+    assert span["status"] == {"code": 1}
+    assert span["traceId"] == base64.b64encode(b"trace:1").decode()
+    assert span["spanId"] == base64.b64encode(b"span:1").decode()
+    assert span["startTimeUnixNano"].isdigit()
+    attributes = {a["key"]: a["value"] for a in span["attributes"]}
+    assert attributes[SpanAttributes.RUN_ID] == {"stringValue": "run:1"}
+    exporter.shutdown()
+
+
+def test_otlp_exporter_decodes_attribute_types():
+    from aegis.observability.otlp import OtlpSpanExporter
+
+    captured: dict[str, object] = {}
+
+    def handler(request):
+        captured["body"] = json.loads(request.content)
+        return Response(200)
+
+    client = httpx.Client(transport=MockTransport(handler))
+    exporter = OtlpSpanExporter(client=client)
+    exporter.export_span(
+        SpanData(
+            span_id="abc12345",
+            name="rich",
+            trace_id="00112233445566778899aabbccddeeff",
+            parent_span_id="fedcba98",
+            start_time=datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC),
+            end_time=datetime(2026, 8, 30, 12, 0, 1, tzinfo=UTC),
+            status=SpanStatusCode.ERROR,
+            attributes={
+                "count": 3,
+                "ratio": 0.5,
+                "ok": True,
+                "tags": ["a", "b"],
+                "meta": {"k": "v"},
+                "nothing": None,
+            },
+        )
+    )
+    exporter.flush()
+    span = captured["body"]["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    attributes = {a["key"]: a["value"] for a in span["attributes"]}
+    assert attributes["count"] == {"intValue": "3"}
+    assert attributes["ratio"] == {"doubleValue": 0.5}
+    assert attributes["ok"] == {"boolValue": True}
+    assert attributes["tags"] == {
+        "arrayValue": {"values": [{"stringValue": "a"}, {"stringValue": "b"}]}
+    }
+    assert (
+        attributes["meta"]
+        == {"kvlistValue": {"values": [{"key": "k", "value": {"stringValue": "v"}}]}}
+    )
+    assert "nothing" not in attributes
+    assert span["status"] == {"code": 2, "message": "error"}
+    assert span["parentSpanId"] == base64.b64encode(b"\xfe\xdc\xba\x98").decode()
+    exporter.shutdown()
+
+
+def test_otlp_exporter_batches_and_keeps_spans_on_failure():
+    from aegis.observability.otlp import OtlpSpanExporter
+
+    calls: list[str] = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        if len(calls) == 1:
+            return Response(503)
+        return Response(200)
+
+    client = httpx.Client(transport=MockTransport(handler))
+    exporter = OtlpSpanExporter(max_batch=5, client=client)
+    for _ in range(5):
+        exporter.export_span(_operational_span())
+
+    assert len(calls) == 1  # threshold flush fired once, failed
+    assert exporter.failed_batches == 1
+    assert exporter.buffered == 5  # spans retained for redelivery
+
+    assert exporter.flush() is True  # redelivery succeeds
+    assert exporter.buffered == 0
+    assert exporter.exported_batches == 1
+    exporter.shutdown()
+
+
+def test_container_picks_otlp_exporter_from_env(monkeypatch):
+    from aegis.interface.container import Container
+    from aegis.observability.otlp import OtlpSpanExporter
+
+    monkeypatch.setenv("AEGIS_OTEL_ENDPOINT", "http://otel:4318")
+    container = Container()
+    assert isinstance(container.tracer_provider.exporter, OtlpSpanExporter)
 
 
 __all__ = []
