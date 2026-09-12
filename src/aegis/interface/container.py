@@ -169,6 +169,10 @@ class Container:
 
         self.evidence_graph = InMemoryEvidenceGraph()
 
+        self.tracer_provider = InMemoryTracerProvider(InMemoryExporter())
+        self.preservation = TracePreservationEngine()
+        self.evaluation_tracers = EvaluationTracerProvider(self.preservation)
+
         from aegis.application.evaluation import EvaluationService
 
         self.runner = EvaluationRunner(
@@ -181,8 +185,9 @@ class Container:
             cancellations=self.cancellations,
             queue=self.queue,
             evidence=self.evidence_repository,
-            gateway=EvaluationService(self.clock),
+            gateway=EvaluationService(self.clock, trace_source=self.preservation.traces_for_run),
             run_gates=self.run_gates,
+            tracer_provider=self.evaluation_tracers,
         )
 
         self.failure_classifier = CategoryFailureClassifier()
@@ -191,9 +196,6 @@ class Container:
         self.slicer = DimensionSlicer()
         self.trends = LinearTrendAnalyzer(self.clock)
 
-        self.tracer_provider = InMemoryTracerProvider(InMemoryExporter())
-        self.preservation = TracePreservationEngine()
-        self.evaluation_tracers = EvaluationTracerProvider(self.preservation)
         self.cost = InMemoryCostTracker()
         self.health = HealthAggregator(
             [

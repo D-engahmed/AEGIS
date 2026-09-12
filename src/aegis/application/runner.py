@@ -76,6 +76,7 @@ class EvaluationRunner:
         timeouts: TimeoutPolicy | None = None,
         run_gate_store: RunGateStore | None = None,
         run_gates: RunGateService | None = None,
+        tracer_provider=None,
         sleep=None,
     ) -> None:
         self._clock = clock
@@ -92,6 +93,7 @@ class EvaluationRunner:
         self._timeouts = timeouts or TimeoutPolicy()
         self._run_gate_store = run_gate_store
         self._run_gates = run_gates
+        self._tracer_provider = tracer_provider
         self._sleep = sleep or (lambda _seconds: None)
 
     def engine(self, client: TargetClient, run_gates=None) -> ExecutionEngine:
@@ -109,6 +111,7 @@ class EvaluationRunner:
             retry=self._retry,
             timeouts=self._timeouts,
             sleep=self._sleep,
+            tracer_provider=self._tracer_provider,
             run_gates=run_gates if run_gates is not None else self._run_gates,
         )
 

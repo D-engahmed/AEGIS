@@ -491,3 +491,53 @@ def test_engine_does_not_reconcile_again_when_already_terminal(
     experiment = harness.experiments.load(run.experiment_id)
     assert experiment.status.value == "succeeded"
     assert len(harness.target.calls) == 1
+
+
+def test_engine_scores_trajectory_from_preserved_trace(
+    clock,
+    make_run,
+    make_dataset_version,
+    make_target_version,
+    make_harness,
+) -> None:
+    from dataclasses import replace
+
+    from aegis.domain.execution import ExperimentSnapshot
+    from aegis.observability.preservation import TracePreservationEngine
+    from aegis.observability.run_tracing import EvaluationTracerProvider
+
+    dataset = make_dataset_version(("hi", "hello"))
+    target_version = make_target_version()
+    snapshot = ExperimentSnapshot(
+        target_version_id=target_version.id,
+        dataset_version_id=dataset.id,
+        evaluator_version_ids=(
+            "aegis/deterministic/exact_match",
+            "aegis/trajectory/step_budget",
+        ),
+        settings={},
+    )
+    run = make_run(
+        target_version_id=target_version.id,
+        dataset_version_id=dataset.id,
+    )
+    run = replace(run, snapshot=snapshot)
+    preservation = TracePreservationEngine()
+    harness = make_harness(
+        run=run,
+        target_version=target_version,
+        dataset_version=dataset,
+        target=ScriptedTarget("hello"),
+        tracer_provider=EvaluationTracerProvider(preservation),
+        trace_source=lambda run_id: preservation.traces_for_run(run_id),
+    )
+
+    harness.engine.run(run.id)
+
+    metrics = harness.results.list_for_run(run.id)
+    identities = {m.evaluator_identity for m in metrics}
+    assert "aegis/deterministic/exact_match" in identities
+    assert "aegis/trajectory/step_budget" in identities
+    step = next(m for m in metrics if m.metric_name == "step_budget")
+    assert step.score == 1.0  # no tool steps observed, budget satisfied
+    assert step.raw_value == 0

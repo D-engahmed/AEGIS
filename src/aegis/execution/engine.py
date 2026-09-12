@@ -249,6 +249,11 @@ class ExecutionEngine:
 
         if tracer is not noop_tracer():
             tracer.flush(run.id)
+        if completed:
+            trajectory_metrics = self._gateway.evaluate_trajectory(
+                run, completed, dataset.test_cases
+            )
+            self._results.persist(trajectory_metrics)
         if self._run_gates is not None and run.status is RunStatus.SUCCEEDED:
             results = self._results.list_for_run(run.id)
             self._run_gates.evaluate(run, results)

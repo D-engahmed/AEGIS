@@ -155,6 +155,7 @@ def make_harness(clock: Clock):
         sleep=None,
         clock: Clock | None = None,
         tracer_provider=None,
+        trace_source=None,
         run_gates=None,
     ):
         at = clock or _clock
@@ -167,7 +168,7 @@ def make_harness(clock: Clock):
         catalog.register_target(target_version)
         catalog.register_dataset(dataset_version)
         registry = InMemoryCancellationRegistry()
-        gateway = EvaluationService(at)
+        gateway = EvaluationService(at, trace_source=trace_source)
         experiments = MemoryExperimentRepository()
         experiments.save(
             Experiment(

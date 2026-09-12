@@ -23,6 +23,7 @@ from aegis.domain import (
     Target,
     TargetVersion,
 )
+from aegis.domain.datasets import TestCase
 from aegis.domain.time import Clock
 
 
@@ -74,6 +75,15 @@ class EvaluationGateway(Protocol):
         evaluator_version_ids: Iterable[str],
         settings: dict,
     ) -> list[MetricResult]: ...
+
+    def evaluate_trajectory(
+        self,
+        run: Run,
+        executions: Iterable[ExecutionRecord],
+        test_cases: Iterable[TestCase],
+    ) -> list[MetricResult]:
+        """Score each execution's preserved trace with trajectory evaluators."""
+        ...
 
 
 @runtime_checkable
