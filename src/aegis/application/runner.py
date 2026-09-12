@@ -105,6 +105,7 @@ class EvaluationRunner:
             catalog=self._catalog,
             cancellations=self._cancellations,
             clock=self._clock,
+            experiments=self._experiments,
             retry=self._retry,
             timeouts=self._timeouts,
             sleep=self._sleep,

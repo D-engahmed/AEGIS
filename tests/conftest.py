@@ -17,7 +17,8 @@ from aegis.domain.datasets import (
     create_dataset_version,
     lock_dataset_version,
 )
-from aegis.domain.execution import ExperimentSnapshot, run_created
+from aegis.domain.execution import run_created
+from aegis.domain.experiments import Experiment, ExperimentSnapshot, ExperimentStatus
 from aegis.domain.failures import FailureCode
 from aegis.domain.targets import TargetType, create_target, create_target_version
 from aegis.domain.time import Clock, FrozenClock
@@ -28,6 +29,7 @@ from aegis.infrastructure.memory import (
     InMemoryCancellationRegistry,
     InMemoryDataCatalog,
     MemoryExecutionRepository,
+    MemoryExperimentRepository,
     MemoryResultRepository,
     MemoryRunRepository,
 )
@@ -166,6 +168,18 @@ def make_harness(clock: Clock):
         catalog.register_dataset(dataset_version)
         registry = InMemoryCancellationRegistry()
         gateway = EvaluationService(at)
+        experiments = MemoryExperimentRepository()
+        experiments.save(
+            Experiment(
+                id=run.experiment_id,
+                organization_id=run.organization_id,
+                project_id=run.project_id,
+                name="fixture-harness",
+                snapshot=run.snapshot,
+                created_at=run.created_at,
+                status=ExperimentStatus.RUNNING,
+            )
+        )
         engine = ExecutionEngine(
             client=target,
             gateway=gateway,
@@ -175,6 +189,7 @@ def make_harness(clock: Clock):
             catalog=catalog,
             cancellations=registry,
             clock=at,
+            experiments=experiments,
             retry=retry or RetryPolicy(),
             timeouts=timeouts or TimeoutPolicy(),
             sleep=sleep or (lambda _seconds: None),
@@ -188,6 +203,7 @@ def make_harness(clock: Clock):
             results=results,
             registry=registry,
             target=target,
+            experiments=experiments,
         )
 
     _clock = clock

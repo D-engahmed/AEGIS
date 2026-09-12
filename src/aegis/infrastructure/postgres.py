@@ -323,6 +323,15 @@ class PostgresRunRepository:
             rows = cur.fetchall()
         return [_run_from(row) for row in rows]
 
+    def list_for_experiment(self, experiment_id: str) -> list[Run]:
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM runs WHERE experiment_id = %s ORDER BY created_at",
+                (experiment_id,),
+            )
+            rows = cur.fetchall()
+        return [_run_from(row) for row in rows]
+
 
 def _run_from(row) -> Run:
     return Run(

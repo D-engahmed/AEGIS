@@ -84,6 +84,9 @@ class MemoryRunRepository:
         items.sort(key=lambda r: r.created_at, reverse=True)
         return items[:limit]
 
+    def list_for_experiment(self, experiment_id: str) -> list[Run]:
+        return [r for r in self._items.values() if r.experiment_id == experiment_id]
+
 
 class MemoryExecutionRepository:
     """One live row per execution id (state transitions upsert), indexed by run."""

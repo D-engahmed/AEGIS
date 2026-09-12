@@ -8,14 +8,17 @@ the experiment into a new variant (immutability-rules.md).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .events import DomainEvent
-from .exceptions import ImmutableResourceViolation, ValidationFailed
+
+if TYPE_CHECKING:
+    from .execution import RunStatus
+from .exceptions import ImmutableResourceViolation, InvalidState, ValidationFailed
 from .identifiers import new_id
 from .time import Clock
 
@@ -82,6 +85,18 @@ class Experiment:
         self.ensure_configurable()
         return _replace_status(self, ExperimentStatus.RUNNING)
 
+    def finish(self, status: ExperimentStatus) -> Experiment:
+        """Transition to a terminal state once all child runs settle."""
+        if status not in (
+            ExperimentStatus.SUCCEEDED,
+            ExperimentStatus.FAILED,
+            ExperimentStatus.CANCELLED,
+        ):
+            raise InvalidState(f"experiment {self.id!r} cannot finish as {status.value!r}")
+        if self.status.terminal:
+            raise InvalidState(f"experiment {self.id!r} is already {self.status.value}")
+        return _replace_status(self, status)
+
     def clone(self, clock: Clock, name: str | None = None) -> Experiment:
         """Create a separate comparison variant; the original is untouched."""
         return Experiment(
@@ -100,6 +115,28 @@ def _replace_status(experiment: Experiment, status: ExperimentStatus) -> Experim
     from dataclasses import replace
 
     return replace(experiment, status=status)
+
+
+def aggregate_experiment_status(run_statuses: Iterable[RunStatus]) -> ExperimentStatus | None:
+    """The terminal status an experiment converges to once its runs settle.
+
+    The worst outcome wins: any failed run marks the experiment failed, then any
+    cancelled run, otherwise all runs succeeded. Returns ``None`` while any run
+    is still in flight. ``Experiment`` is immutable per-run; this function only
+    decides, it does not mutate.
+    """
+    from .execution import RunStatus
+
+    statuses = set(run_statuses)
+    if not statuses:
+        return None
+    if any(s is RunStatus.FAILED for s in statuses):
+        return ExperimentStatus.FAILED
+    if not all(s.terminal for s in statuses):
+        return None
+    if any(s is RunStatus.CANCELLED for s in statuses):
+        return ExperimentStatus.CANCELLED
+    return ExperimentStatus.SUCCEEDED
 
 
 def create_experiment(
@@ -143,5 +180,6 @@ __all__ = [
     "Experiment",
     "ExperimentSnapshot",
     "ExperimentStatus",
+    "aggregate_experiment_status",
     "create_experiment",
 ]

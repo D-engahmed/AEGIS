@@ -334,24 +334,160 @@ def test_engine_writes_gate_report_on_success(
     ]
 
 
-def test_engine_does_not_write_gate_report_when_unconfigured(
+def test_engine_reconciles_experiment_status_on_success(
     clock,
     make_run,
     make_dataset_version,
     make_target_version,
     make_harness,
 ) -> None:
-    dataset = make_dataset_version(("hi", "hello"), ("bye", "bye"))
+    dataset = make_dataset_version(("hi", "hello"))
     target_version = make_target_version()
     run = make_run(target_version_id=target_version.id, dataset_version_id=dataset.id)
+    target = ScriptedTarget("hello")
     harness = make_harness(
         run=run,
         target_version=target_version,
         dataset_version=dataset,
+        target=target,
     )
 
     harness.engine.run(run.id)
 
-    from aegis.domain import RunStatus
+    experiment = harness.experiments.load(run.experiment_id)
+    assert experiment.status.value == "succeeded"
 
-    assert harness.runs.load(run.id).status is RunStatus.SUCCEEDED
+
+def test_engine_reconciles_experiment_failed_when_run_fails(
+    clock,
+    make_run,
+    make_dataset_version,
+    make_target_version,
+    make_harness,
+) -> None:
+    dataset = make_dataset_version(("hi", "hello"))
+    target_version = make_target_version()
+    run = make_run(target_version_id=target_version.id, dataset_version_id=dataset.id)
+    target = ScriptedTarget(FailureCode.MALFORMED_RESPONSE)
+    harness = make_harness(
+        run=run,
+        target_version=target_version,
+        dataset_version=dataset,
+        target=target,
+        retry=_fast_retry(),
+    )
+
+    harness.engine.run(run.id)
+
+    experiment = harness.experiments.load(run.experiment_id)
+    assert experiment.status.value == "failed"
+
+
+def test_engine_reconciles_experiment_cancelled_when_run_cancelled(
+    clock,
+    make_run,
+    make_dataset_version,
+    make_target_version,
+    make_harness,
+) -> None:
+    dataset = make_dataset_version(("hi", "hello"))
+    target_version = make_target_version()
+    run = make_run(target_version_id=target_version.id, dataset_version_id=dataset.id)
+    harness = make_harness(run=run, target_version=target_version, dataset_version=dataset)
+    harness.registry.cancel(run.id, "alice", clock)
+
+    harness.engine.run(run.id)
+
+    experiment = harness.experiments.load(run.experiment_id)
+    assert experiment.status.value == "cancelled"
+
+
+def test_engine_does_not_reconcile_while_sibling_run_in_flight(
+    clock,
+    make_run,
+    make_dataset_version,
+    make_target_version,
+    make_harness,
+) -> None:
+    from aegis.domain.execution import run_created
+
+    dataset = make_dataset_version(("hi", "hello"))
+    target_version = make_target_version()
+    run_a = make_run(target_version_id=target_version.id, dataset_version_id=dataset.id)
+    harness = make_harness(run=run_a, target_version=target_version, dataset_version=dataset)
+    run_b = run_created(
+        clock,
+        "org:1",
+        "prj:1",
+        run_a.experiment_id,
+        run_a.snapshot,
+        created_by="alice",
+    )
+    harness.runs.save(run_b)
+
+    harness.engine.run(run_a.id)
+
+    experiment = harness.experiments.load(run_a.experiment_id)
+    assert experiment.status.value == "running"  # run_b still queued
+
+
+def test_engine_reconciles_experiment_after_last_sibling_completes(
+    clock,
+    make_run,
+    make_dataset_version,
+    make_target_version,
+    make_harness,
+) -> None:
+    from aegis.domain.execution import run_created
+
+    dataset = make_dataset_version(("hi", "hello"))
+    target_version = make_target_version()
+    run_a = make_run(target_version_id=target_version.id, dataset_version_id=dataset.id)
+    target = ScriptedTarget("hello")
+    harness = make_harness(
+        run=run_a,
+        target_version=target_version,
+        dataset_version=dataset,
+        target=target,
+    )
+    run_b = run_created(
+        clock,
+        "org:1",
+        "prj:1",
+        run_a.experiment_id,
+        run_a.snapshot,
+        created_by="alice",
+    )
+    harness.runs.save(run_b)
+
+    harness.engine.run(run_a.id)
+    harness.engine.run(run_b.id)
+
+    experiment = harness.experiments.load(run_a.experiment_id)
+    assert experiment.status.value == "succeeded"
+
+
+def test_engine_does_not_reconcile_again_when_already_terminal(
+    clock,
+    make_run,
+    make_dataset_version,
+    make_target_version,
+    make_harness,
+) -> None:
+    dataset = make_dataset_version(("hi", "hello"))
+    target_version = make_target_version()
+    run = make_run(target_version_id=target_version.id, dataset_version_id=dataset.id)
+    target = ScriptedTarget("hello")
+    harness = make_harness(
+        run=run,
+        target_version=target_version,
+        dataset_version=dataset,
+        target=target,
+    )
+
+    harness.engine.run(run.id)
+    harness.engine.run(run.id)
+
+    experiment = harness.experiments.load(run.experiment_id)
+    assert experiment.status.value == "succeeded"
+    assert len(harness.target.calls) == 1

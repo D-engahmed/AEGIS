@@ -20,6 +20,7 @@ from aegis.application.ports import (
     DataCatalog,
     EvaluationGateway,
     ExecutionRepository,
+    ExperimentRepository,
     ResultRepository,
     RunRepository,
     TargetClient,
@@ -85,6 +86,7 @@ class ExecutionEngine:
         catalog: DataCatalog,
         cancellations: CancellationRegistry,
         clock: Clock,
+        experiments: ExperimentRepository,
         retry: RetryPolicy,
         timeouts: TimeoutPolicy,
         sleep: Callable[[float], None] = time.sleep,
@@ -99,6 +101,7 @@ class ExecutionEngine:
         self._catalog = catalog
         self._cancellations = cancellations
         self._clock = clock
+        self._experiments = experiments
         self._retry = retry
         self._timeouts = timeouts
         self._sleep = sleep
@@ -242,6 +245,7 @@ class ExecutionEngine:
             run = run.fail(fatal, summary, self._clock.now())
         run = replace(run, executions=tuple(ex.id for ex in completed))
         self._runs.save(run)
+        self._reconcile_experiment(run.experiment_id)
 
         if tracer is not noop_tracer():
             tracer.flush(run.id)
@@ -249,6 +253,19 @@ class ExecutionEngine:
             results = self._results.list_for_run(run.id)
             self._run_gates.evaluate(run, results)
         return run
+
+    def _reconcile_experiment(self, experiment_id: str) -> None:
+        """Advance the experiment to a terminal status once its runs settle."""
+        experiment = self._experiments.load(experiment_id)
+        if experiment.status.terminal:
+            return
+        from aegis.domain.experiments import aggregate_experiment_status
+
+        final = aggregate_experiment_status(
+            run.status for run in self._runs.list_for_experiment(experiment_id)
+        )
+        if final is not None:
+            self._experiments.save(experiment.finish(final))
 
     def _invoke_with_retry(
         self,

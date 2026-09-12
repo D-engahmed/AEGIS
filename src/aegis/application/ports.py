@@ -97,6 +97,8 @@ class RunRepository(Protocol):
 
     def list_for_org(self, organization_id: str, limit: int = 50) -> list[Run]: ...
 
+    def list_for_experiment(self, experiment_id: str) -> list[Run]: ...
+
 
 @runtime_checkable
 class ExecutionRepository(Protocol):
