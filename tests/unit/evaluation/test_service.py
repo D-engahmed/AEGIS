@@ -151,7 +151,11 @@ def test_service_evaluate_trajectory_scores_preserved_spans() -> None:
     )
     service = EvaluationService(clock, trace_source=lambda _run_id: [record])
     test_case = TestCase(
-        id="tc:1", dataset_version_id="dsv:1", index=0, input="q", expected="a",
+        id="tc:1",
+        dataset_version_id="dsv:1",
+        index=0,
+        input="q",
+        expected="a",
         metadata={"step_budget": 5, "expected_tool": "calculator"},
     )
     run = Run(

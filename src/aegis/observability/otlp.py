@@ -74,9 +74,7 @@ def _span_to_otlp(span: SpanData) -> dict[str, Any]:
         "endTimeUnixNano": _unix_nanos(span.end_time),
         "attributes": attributes,
         "status": (
-            {"code": 2, "message": "error"}
-            if span.status is SpanStatusCode.ERROR
-            else {"code": 1}
+            {"code": 2, "message": "error"} if span.status is SpanStatusCode.ERROR else {"code": 1}
         ),
     }
     if span.parent_span_id is not None:
@@ -89,9 +87,7 @@ def _traces_payload(spans: list[SpanData], service_name: str) -> dict[str, Any]:
         "resourceSpans": [
             {
                 "resource": {
-                    "attributes": [
-                        {"key": "service.name", "value": {"stringValue": service_name}}
-                    ]
+                    "attributes": [{"key": "service.name", "value": {"stringValue": service_name}}]
                 },
                 "scopeSpans": [
                     {

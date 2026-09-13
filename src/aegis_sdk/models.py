@@ -154,9 +154,7 @@ class Experiment(ApiModel):
             status=data.get("status", ""),
             created_at=_dt(data.get("created_at")),
             clone_of=data.get("clone_of"),
-            snapshot=(
-                ExperimentSnapshot.parse(data["snapshot"]) if data.get("snapshot") else None
-            ),
+            snapshot=(ExperimentSnapshot.parse(data["snapshot"]) if data.get("snapshot") else None),
         )
 
 

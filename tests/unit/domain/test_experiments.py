@@ -29,9 +29,7 @@ def test_aggregate_succeeded_when_all_terminal() -> None:
 
 def test_aggregate_failed_wins_over_cancelled_and_succeeded() -> None:
     assert (
-        aggregate_experiment_status(
-            [RunStatus.SUCCEEDED, RunStatus.CANCELLED, RunStatus.FAILED]
-        )
+        aggregate_experiment_status([RunStatus.SUCCEEDED, RunStatus.CANCELLED, RunStatus.FAILED])
         is ExperimentStatus.FAILED
     )
     assert (

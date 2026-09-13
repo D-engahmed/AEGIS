@@ -251,8 +251,7 @@ class RecoveryEvaluator(TrajectoryEvaluator):
 
 
 _TRAJECTORY_REGISTRY: dict[str, TrajectoryEvaluator] = {
-    e.identity: e
-    for e in (StepBudgetEvaluator(), ToolSelectionEvaluator(), RecoveryEvaluator())
+    e.identity: e for e in (StepBudgetEvaluator(), ToolSelectionEvaluator(), RecoveryEvaluator())
 }
 
 _TRAJECTORY_IDENTITIES = set(_TRAJECTORY_REGISTRY)

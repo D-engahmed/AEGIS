@@ -131,9 +131,7 @@ class ExperimentsResource(_Resource):
         return _parse_list(Experiment, self._request("GET", "/experiments"))
 
     def get(self, experiment_id: str) -> Experiment:
-        return Experiment.parse(
-            self._request("GET", f"/experiments/{_quote(experiment_id)}")
-        )
+        return Experiment.parse(self._request("GET", f"/experiments/{_quote(experiment_id)}"))
 
     def create(
         self,
@@ -160,9 +158,7 @@ class ExperimentsResource(_Resource):
         )
 
     def runs(self, experiment_id: str) -> list[Run]:
-        return _parse_list(
-            Run, self._request("GET", f"/experiments/{_quote(experiment_id)}/runs")
-        )
+        return _parse_list(Run, self._request("GET", f"/experiments/{_quote(experiment_id)}/runs"))
 
 
 class RunsResource(_Resource):

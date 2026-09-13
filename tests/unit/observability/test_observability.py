@@ -306,10 +306,9 @@ def test_otlp_exporter_decodes_attribute_types():
     assert attributes["tags"] == {
         "arrayValue": {"values": [{"stringValue": "a"}, {"stringValue": "b"}]}
     }
-    assert (
-        attributes["meta"]
-        == {"kvlistValue": {"values": [{"key": "k", "value": {"stringValue": "v"}}]}}
-    )
+    assert attributes["meta"] == {
+        "kvlistValue": {"values": [{"key": "k", "value": {"stringValue": "v"}}]}
+    }
     assert "nothing" not in attributes
     assert span["status"] == {"code": 2, "message": "error"}
     assert span["parentSpanId"] == base64.b64encode(b"\xfe\xdc\xba\x98").decode()
