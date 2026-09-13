@@ -16,6 +16,8 @@ from aegis.policy.application import (
 )
 from aegis.policy.models import RunGateVerdict
 from aegis.policy.ports import RunGateStore
+from aegis.security.models import AuthContext
+from aegis.security.override import can_override_gate
 
 
 class RunGateService:
@@ -63,6 +65,40 @@ class RunGateService:
         )
         self._store.save(updated)
         return updated
+
+    def override_blocked(
+        self,
+        run_id: str,
+        reason: str,
+        auth_context: AuthContext,
+    ) -> RunGateReport:
+        """Orchestrate: load, find blocking decision, authorize, override, save.
+
+        The caller (interface layer) keeps HTTP error mapping, DTO conversion,
+        and audit recording.  This method owns only the business-logic steps
+        that belong in the application layer.
+        """
+        from aegis.domain import Conflict, InsufficientPermission, NotFound
+
+        try:
+            report = self._store.load(run_id)
+        except NotFound:
+            raise
+        except Exception:
+            raise NotFound(f"gate report for run {run_id!r} not found") from None
+
+        decision_to_override = next((d for d in report.decisions if d.severity.blocks), None)
+        if decision_to_override is None:
+            raise Conflict("run is not blocked; nothing to override")
+
+        if not can_override_gate(auth_context, decision_to_override):
+            raise InsufficientPermission("actor may not override this gate decision")
+
+        return self.override(
+            report,
+            overridden_by=auth_context.user_id,
+            reason=reason,
+        )
 
 
 def is_run_blocked(report: RunGateReport) -> bool:

@@ -10,11 +10,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 
 from aegis.policy.models import RunGateReport
 from aegis.security.models import Permission
-from aegis.security.override import can_override_gate
 
 from ..container import Container
 from ..deps import Actor, get_container, require_permission
@@ -59,13 +58,7 @@ def run_verdict(
 ) -> RunVerdictOut:
     """Fetch the persisted gate report (verdict + decisions) for a run."""
     actor.organization.require_membership(actor.context.user_id)
-    try:
-        report = container.run_gates.report(run_id)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"no gate report for run {run_id!r}",
-        ) from exc
+    report = container.run_gates.report(run_id)
     return _verdict_out(report)
 
 
@@ -78,28 +71,10 @@ def override_run_block(
 ) -> RunVerdictOut:
     """Authorize proceeding past a blocked run; recorded and audited."""
     actor.organization.require_membership(actor.context.user_id)
-    try:
-        report = container.run_gates.report(run_id)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"no gate report for run {run_id!r}",
-        ) from exc
-    decision_to_override = next((d for d in report.decisions if d.severity.blocks), None)
-    if decision_to_override is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="run is not blocked; nothing to override",
-        )
-    if not can_override_gate(actor.context, decision_to_override):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="actor may not override this gate decision",
-        )
-    updated = container.run_gates.override(
-        report,
-        overridden_by=actor.context.user_id,
-        reason=payload.reason,
+    updated = container.run_gates.override_blocked(
+        run_id,
+        payload.reason,
+        actor.context,
     )
     container.audit.record(
         actor_id=actor.context.user_id,
