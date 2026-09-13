@@ -29,23 +29,37 @@ Then open:
 
 | What               | Where                                                        |
 | ------------------ | ------------------------------------------------------------ |
-| Dashboard (UI)     | http://localhost:8000/                                        |
 | Swagger            | http://localhost:8000/docs                                    |
 | Live API checks    | http://localhost:8000/health/live (add a bearer token)        |
+| Dashboard (UI)     | http://localhost:5173/ (separate static deployable, see below)|
 
-To use the dashboard you need a token. The API mint one via the dev login
+The dashboard is a **separate static deployable** (see
+[`docs/architecture/container-architecture.md`](architecture/container-architecture.md)):
+it is never embedded in the API process and talks to the API only over HTTP.
+Serve it from the `frontend/` directory and point it at a running API:
+
+```bash
+# one terminal: the API (dev login for the dashboard handshake)
+AEGIS_DEV_LOGIN=1 docker compose up -d --build api
+
+# another terminal: the dashboard, any free port
+python -m http.server 5173 --directory frontend
+# open http://localhost:5173/
+```
+
+To use the dashboard you need a token. The API mints one via the dev login
 (flag it **off for production**):
 
 ```bash
-AEGIS_DEV_LOGIN=1 docker compose up -d --build api
-
 curl -s http://localhost:8000/security/dev-token
 # {"token": "aegis.v1...", "expires_at": "...", "authentication_method": "service_account"}
 ```
 
 The dashboard logs itself in with that token and shows experiments, runs,
-results and evidence. Everything below also works without the UI via the CLI
-and REST API.
+results and evidence. Running the dashboard on a different origin than the API?
+Set `window.AEGIS_API_BASE` via `frontend/config.example.js` and allow that
+origin through `AEGIS_CORS_ORIGINS` on the API. Everything below also works
+without the UI via the CLI and REST API.
 
 ---
 
@@ -175,6 +189,12 @@ App surface (Swagger at `/docs`):
 | POST   | `/policy/verdict/{run_id}/override`| human override                 |
 | GET    | `/observability/traces/{run_id}`  | execution traces                 |
 | GET    | `/observability/cost/{run_id}`    | cost tracking                    |
+| GET    | `/evaluators`                     | evaluator inventory (discovery)  |
+| GET    | `/catalog`                        | datasets + targets snapshot      |
+| GET    | `/catalog/targets`                | list targets                     |
+| GET    | `/catalog/datasets`               | list datasets                    |
+| GET    | `/catalog/targets/{id}`           | one target                       |
+| GET    | `/catalog/datasets/{id}`          | one dataset                      |
 | GET    | `/health/live`                    | liveness (behind auth)           |
 
 Auth: `Authorization: Bearer <token>`. Anonymous requests get `401`; tampered
@@ -185,9 +205,10 @@ tokens get `403`. Tokens are HMAC-signed — `aegis.v1.<payload>.<sig>`.
 ## 4. "As a QA/analyst, I want to see evidence, not just a number"
 
 ```bash
-# start the UI (with dev login so it can mint its session token)
+# start the API (with dev login so the dashboard can mint its session token)
 AEGIS_DEV_LOGIN=1 docker compose up -d --build api
-# open http://localhost:8000/
+# start the separate dashboard deployable and open http://localhost:5173/
+python -m http.server 5173 --directory frontend
 ```
 
 The dashboard lists experiments → runs → results → evidence and lets you

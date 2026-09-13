@@ -82,20 +82,34 @@ def test_garbage_token_is_rejected(api) -> None:
     assert resp.status_code == 403
 
 
-def test_dashboard_is_served_at_root(api) -> None:
+def test_root_is_api_self_description_not_dashboard(api) -> None:
     _, client = api
     resp = client.get("/")
     assert resp.status_code == 200
-    assert "text/html" in resp.headers["content-type"]
-    assert "AEGIS" in resp.text
-    assert "/static/ui/styles.css" in resp.text
-    assert "/static/ui/app.js" in resp.text
+    body = resp.json()
+    assert body["service"] == "aegis-api"
+    assert body["docs"] == "/docs"
+    assert body["openapi"] == "/openapi.json"
 
 
-def test_dashboard_static_assets_are_served(api) -> None:
+def test_api_serves_no_dashboard_static_assets(api) -> None:
     _, client = api
-    assert client.get("/static/ui/styles.css").status_code == 200
-    assert client.get("/static/ui/app.js").status_code == 200
+    # The dashboard ships as a separate deployable (frontend/); the API process
+    # must not embed or serve UI assets next to the routing layer.
+    assert client.get("/static/ui/index.html").status_code == 404
+    assert client.get("/static/ui/app.js").status_code == 404
+
+
+def test_cors_allows_local_development_origins(api) -> None:
+    _, client = api
+    resp = client.get(
+        "/health/live",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Authorization": "Bearer invalid",  # response shape is what matters
+        },
+    )
+    assert resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
 
 
 def test_dev_token_disabled_by_default(api) -> None:

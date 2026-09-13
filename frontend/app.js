@@ -17,7 +17,11 @@ const S = {
   analysis: {}, // persisted analysis picks: baseline, current, metric
 };
 
-const API = "";
+// The dashboard is a separate deployable from the AEGIS API (see
+// docs/architecture/container-architecture.md). It talks to the API through a
+// configurable base URL; empty means same-origin. Hosts override
+// window.AEGIS_API_BASE (frontend/config.example.js) before this file loads.
+const API = String(window.AEGIS_API_BASE || "").replace(/\/+$/, "");
 
 const RUN_STATUSES = ["queued", "running", "retrying", "partial", "succeeded", "failed", "cancelled"];
 const VERDICTS = ["pass", "warn", "block"];
@@ -222,6 +226,8 @@ function navigate() {
 /* ---------------------------------------------------------------- boot */
 
 async function boot() {
+  const docsLink = document.getElementById("docs-link");
+  if (docsLink) docsLink.href = API + "/docs";
   window.addEventListener("hashchange", navigate);
   document.addEventListener("click", onAction);
   document.addEventListener("keydown", onKey);
@@ -919,8 +925,8 @@ async function renderSystem() {
       <div class="card-head"><h2>Programmatic access</h2></div>
       <div class="card-body">
         <dl class="kv">
-          <dt>Swagger</dt><dd><a href="/docs" target="_blank" rel="noreferrer">/docs</a></dd>
-          <dt>OpenAPI</dt><dd><a href="/openapi.json" target="_blank" rel="noreferrer">/openapi.json</a></dd>
+          <dt>Swagger</dt><dd><a href="${API}/docs" target="_blank" rel="noreferrer">${API || ""}/docs</a></dd>
+          <dt>OpenAPI</dt><dd><a href="${API}/openapi.json" target="_blank" rel="noreferrer">${API || ""}/openapi.json</a></dd>
           <dt>CLI</dt><dd class="mono">aegis version | probe | evaluate | record | worker | serve</dd>
           <dt>Auth</dt><dd class="cell-second">Bearer tokens are HMAC-signed (<span class="mono">aegis.v1.&lt;payload&gt;.&lt;sig&gt;</span>). Dev login is served at <span class="mono">GET /security/dev-token</span> when <span class="mono">AEGIS_DEV_LOGIN=1</span>.</dd>
         </dl>
@@ -938,7 +944,7 @@ function renderLogin(detail, status) {
         The dashboard authenticates through the dev-login endpoint. Start the API with
         <span class="mono">AEGIS_DEV_LOGIN=1</span> in development:<br>
         <pre class="code">AEGIS_DEV_LOGIN=1 docker compose up -d --build api</pre>
-        The REST API stays fully available at <a href="/docs">/docs</a> with a manually sourced bearer token.</div>
+        The REST API stays fully available at <a href="${API}/docs" target="_blank" rel="noreferrer">${API || ""}/docs</a> with a manually sourced bearer token.</div>
       </div>
       <div><button class="btn btn--primary" data-action="retry-login">Retry login</button></div>
     </div>`;

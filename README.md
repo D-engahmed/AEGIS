@@ -33,7 +33,7 @@ those agents actually work?"* for anything ancient builds and runs.
 | 3 | Interface: single `aegis` CLI (`version`/`probe`/`evaluate`/`worker`) + console script | ✅ done |
 | 4 | Infrastructure: PostgreSQL + Redis adapters, migrations, in-memory fallbacks | ✅ done |
 | 5 | Execution: engine + queue worker + REST target adapter + evaluator plugins | ✅ done |
-| 6–11 | Gates (policy), evidence, observability, security | ✅ done (gates & immutable evidence proven; FastAPI/OTel are post-v0.1) |
+| 6–11 | Gates (policy), evidence, observability, security | ✅ done (gates & immutable evidence proven; OTel trace store post-v0.1) |
 
 The full roadmap is defined in [`docs/implementation/implementation-order.md`](docs/implementation/implementation-order.md)
 and traced against requirements in [`docs/requirements/`](docs/requirements).
@@ -55,8 +55,8 @@ The persisted vertical slice is implemented and proven against live infrastructu
   compose network was claimed by the composed worker, executed against a container
   target, and its run + 2 executions + 2 evidence rows committed to PostgreSQL.
 
-Explicitly deferred (post-v0.1, not part of this slice): FastAPI REST surface,
-OTel trace store, object-storage evidence, dashboards, FEXL.
+Explicitly deferred (post-v0.1, not part of this slice): OTel trace store,
+object-storage evidence, FEXL.
 
 ---
 
@@ -179,6 +179,7 @@ src/aegis/               Python package (modular monolith)
   evidence/              layer 09 · evidence graph & auditability
   observability/         layer 10 · OTel tracing/telemetry
   security/              layer 11 · authorization & audit
+frontend/                dashboard — separate static deployable (talks only to the REST API)
 scripts/                 automation (purity gate, docs validation)
 tests/unit/domain/       domain unit tests (marked unit)
 tests/integration/       live suite against compose Postgres + Redis (marked integration)
