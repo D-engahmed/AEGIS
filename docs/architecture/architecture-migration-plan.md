@@ -332,10 +332,27 @@ storage — none is justified by the audit.
 
 ## 9. Baseline (Phase 2, recorded at audit time)
 
-To be filled by the Phase 2 run: ruff, format, mypy, domain purity, docs
-validation, unit count, integration count (compose stores), Playwright E2E
-result, plus any pre-existing failure with its evidence. No migration step
-may start from an unrecorded baseline.
+Pre-existing defect found: `ruff format --check src tests scripts` was red
+under ruff 0.16.5 (13 unformatted files). CI installs `ruff>=0.6` floating,
+so the format gate was already broken before any migration work. Fixed in
+commit `073096a` (`style: apply ruff 0.16.5 formatting across src and tests`)
+— mechanical auto-format only, zero logic changes. All other gates were
+already green at the commit immediately prior to the format fix.
+
+| Gate | Command | Result |
+|---|---|---|
+| Lint | `ruff check src tests scripts` | passed |
+| Format | `ruff format --check src tests scripts` | passed (after `073096a`) |
+| Type check | `mypy src` | passed, 98 source files |
+| Domain purity | `scripts/check_domain_purity.py` | passed, 13 files |
+| Docs validation | `scripts/validate_docs.py` | passed, 103 markdown files |
+| Unit tests | `pytest -m unit -q --cov=aegis` | 275 passed, 89% coverage |
+| Integration tests | `pytest -m integration -q` | 19 passed (compose Postgres + Redis) |
+| Dashboard E2E | `e2e_dashboard.py` (Playwright) | 27/27 passed, 0 page errors, 0 failed requests |
+| Architecture tests | `tests/unit/interface/test_frontend_structure.py` | passed (no `ui/` inside Python package) |
+
+No migration step may start from an unrecorded baseline. Steps 1–9 in §5
+may now proceed one at a time.
 
 ## 10. Definition of done for the migration
 
