@@ -152,6 +152,41 @@ class EvaluationRunner:
 
         return self.finish_run(run.id)
 
+    def drain(
+        self,
+        client_factory,
+        *,
+        count: int | None = None,
+    ) -> int:
+        """Claim and process jobs from the queue until empty or count reached.
+
+        Each job is routed through the canonical path: load run → skip terminal
+        → create engine → engine.run(job_id) → finish_run.  The
+        *client_factory* is a callable ``(target_version) -> TargetClient``
+        supplied by the interface layer (CLI or API) since target-client
+        creation is an interface concern.
+        """
+        handled = 0
+        while True:
+            job_id = self._queue.claim()
+            if job_id is None:
+                break
+            try:
+                run = self._runs.load(job_id)
+                if not run.status.terminal:
+                    tv = self._catalog.load_target_version(run.snapshot.target_version_id)
+                    engine = self.engine(client_factory(tv))
+                    engine.run(job_id)
+                self.finish_run(job_id)
+            except Exception:
+                self._queue.abandon(job_id)
+                raise
+            self._queue.complete(job_id)
+            handled += 1
+            if count is not None and handled >= count:
+                break
+        return handled
+
     def finish_run(self, run_id: str) -> EvaluationOutcome:
         """Finalize a completed run: load results and link their evidence."""
         run = self._runs.load(run_id)

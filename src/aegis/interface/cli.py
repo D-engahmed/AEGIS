@@ -264,28 +264,7 @@ def drain_queue(container: Container, count: int | None = None) -> int:
     is safe because run execution is idempotent and evidence linking is
     deduplicated per metric result. Terminal runs are skipped on redelivery.
     """
-    handled = 0
-    while True:
-        job_id = container.queue.claim()
-        if job_id is None:
-            break
-        try:
-            run = container.runs.load(job_id)
-            if not run.status.terminal:
-                target_version = container.catalog.load_target_version(
-                    run.snapshot.target_version_id
-                )
-                engine = container.runner.engine(_rest_client(target_version))
-                engine.run(job_id)
-            container.runner.finish_run(job_id)
-        except Exception:
-            container.queue.abandon(job_id)
-            raise
-        container.queue.complete(job_id)
-        handled += 1
-        if count is not None and handled >= count:
-            break
-    return handled
+    return container.runner.drain(_rest_client, count=count)
 
 
 def run_worker(
