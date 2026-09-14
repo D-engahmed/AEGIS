@@ -285,9 +285,14 @@ Concretely:
    schema<->SDK field parity, live round-trips, error contract, OpenAPI
    snapshot (30 paths). Contract job added to CI.
    Gate: 275 unit, 27 contract, markers disjoint — all green.
-7. **Dead-code removal.** Delete only what tests prove unread
-   (`evidence_graph` wiring, cost stubs or wire them, timeout helper,
-   debug `now` endpoints or document them) — one deletion per commit.
+7. **Dead-code removal.** ✅ (`93bf210`+`0ac92ea`+`89db0bf`) One deletion
+   per commit, each with grep proof: unread `evidence_graph` container
+   wiring, unused `test_timeout_remaining` helper, hidden undocumented
+   `GET /policy/now` + `GET /security/now` debug routes (OpenAPI snapshot
+   byte-identical — they were never in the schema). Explicitly kept: the
+   cost endpoint (live wire + SDK surface; removal would break contract,
+   wiring it is a feature), empty `__init__` package markers.
+   Gate: 275 unit, 27 contract, 19 integration — all green.
 8. **Architecture tests to CI.** Extend the purity script (or add one
    beside it) with the §4 rules: no store access from routers, no
    execution concretions in application, explicit port declarations.
