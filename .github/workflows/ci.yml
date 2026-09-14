@@ -24,6 +24,8 @@ jobs:
         run: mypy src
       - name: Domain purity gate (no forbidden imports)
         run: python scripts/check_domain_purity.py
+      - name: Layer boundary gate (dependency direction + port declarations)
+        run: python scripts/check_layer_boundaries.py
       - name: Docs validation
         run: python scripts/validate_docs.py
       - name: Unit tests + coverage
