@@ -28,3 +28,5 @@ jobs:
         run: python scripts/validate_docs.py
       - name: Unit tests + coverage
         run: pytest -m unit -q --cov=aegis --cov-report=term-missing
+      - name: Contract tests (SDK <-> API parity + OpenAPI snapshot)
+        run: pytest -m contract -q

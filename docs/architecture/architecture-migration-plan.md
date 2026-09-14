@@ -278,10 +278,13 @@ Concretely:
    into EvaluationRunner — application no longer imports from execution.
    Fixed infrastructure→execution wrong-direction import.
    Gate: 275 unit, 19 integration, 27/27 E2E — all green.
-6. **DTO parity.** Centralize mappers per capability (keep hand-written
-   mappers; no codegen dependency — stdlib-first principle,
-   `dependency-rules.md:71-77`); add contract tests asserting schema ↔
-   domain ↔ SDK parity. Gate: new `contract` marker suite in CI.
+6. **DTO parity.** ✅ (`3893f1c`+`0c05122`+`f74d08f`) Centralized all
+   domain-to-wire mapping in `interface/mappers/` (11 modules, pure
+   functions); all 9 routers delegate. `routers/results.py` kept as a
+   deprecated re-export shim. New `tests/contract/` suite (27 tests):
+   schema<->SDK field parity, live round-trips, error contract, OpenAPI
+   snapshot (30 paths). Contract job added to CI.
+   Gate: 275 unit, 27 contract, markers disjoint — all green.
 7. **Dead-code removal.** Delete only what tests prove unread
    (`evidence_graph` wiring, cost stubs or wire them, timeout helper,
    debug `now` endpoints or document them) — one deletion per commit.
@@ -348,6 +351,7 @@ already green at the commit immediately prior to the format fix.
 | Domain purity | `scripts/check_domain_purity.py` | passed, 13 files |
 | Docs validation | `scripts/validate_docs.py` | passed, 103 markdown files |
 | Unit tests | `pytest -m unit -q --cov=aegis` | 275 passed, 89% coverage |
+| Contract tests | `pytest -m contract -q` | 27 passed (added in step 5; parity + round-trip + error + OpenAPI) |
 | Integration tests | `pytest -m integration -q` | 19 passed (compose Postgres + Redis) |
 | Dashboard E2E | `e2e_dashboard.py` (Playwright) | 27/27 passed, 0 page errors, 0 failed requests |
 | Architecture tests | `tests/unit/interface/test_frontend_structure.py` | passed (no `ui/` inside Python package) |
