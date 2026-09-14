@@ -7,6 +7,7 @@ Constraints (docs/development/layers/01-domain-layer.md):
   and fully unit-testable.
 """
 
+from .cancellation import CancellationRequested, CancellationToken
 from .datasets import Dataset, DatasetStatus, DatasetVersion, TestCase
 from .events import DomainEvent
 from .exceptions import (
@@ -38,6 +39,8 @@ from .time import UTC, Clock, FrozenClock, SystemClock
 
 __all__ = [
     "AegisDomainError",
+    "CancellationToken",
+    "CancellationRequested",
     "Clock",
     "Conflict",
     "Dataset",

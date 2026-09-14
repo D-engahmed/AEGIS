@@ -24,6 +24,7 @@ from aegis.domain import (
     Target,
     TargetVersion,
 )
+from aegis.domain.cancellation import CancellationToken
 from aegis.domain.identifiers import new_id
 from aegis.domain.time import Clock
 from aegis.evidence.models import (
@@ -32,7 +33,6 @@ from aegis.evidence.models import (
     EvidenceRecord,
     ProvenanceSnapshot,
 )
-from aegis.execution.cancellation import CancellationToken
 from aegis.policy.models import RunGateReport
 
 
