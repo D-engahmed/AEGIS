@@ -12,8 +12,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from aegis.domain.datasets import add_test_case, create_dataset, create_dataset_version
-from aegis.domain.targets import TargetType, create_target, create_target_version
+from aegis.domain.targets import TargetType
 from aegis.security.models import Permission
 
 from ..container import Container
@@ -132,23 +131,19 @@ def register_target(
     """Register a target application and its first immutable config version."""
     org = actor.context.organization_id
     actor.organization.require_membership(actor.context.user_id)
-    target = create_target(
-        container.clock,
+    from aegis.application.catalog import CatalogService
+
+    svc = CatalogService(container.clock, container.catalog)
+    version = svc.register_target(
         org,
         payload.project_id,
         payload.name,
         TargetType(payload.target_type),
-    )
-    version = create_target_version(
-        container.clock,
-        target,
         payload.label,
         payload.config,
         commit_sha=payload.commit_sha,
     )
-    container.catalog.register_target_record(target)
-    container.catalog.register_target(version)
-    audit(container, actor, "target.registered", "target", target.id)
+    audit(container, actor, "target.registered", "target", version.target_id)
     return _target_out(container, version)
 
 
@@ -161,19 +156,15 @@ def register_dataset(
     """Register a dataset and a draft version with its initial test cases."""
     org = actor.context.organization_id
     actor.organization.require_membership(actor.context.user_id)
-    dataset = create_dataset(container.clock, org, payload.project_id, payload.name)
-    version, _event = create_dataset_version(container.clock, dataset, payload.label)
-    for test_case in payload.test_cases:
-        version, _event = add_test_case(
-            container.clock,
-            version,
-            input=test_case.input,
-            expected=test_case.expected,
-            metadata=test_case.metadata,
-        )
-    container.catalog.register_dataset_record(dataset)
-    container.catalog.register_dataset(version)
-    audit(container, actor, "dataset.registered", "dataset", dataset.id)
+    from aegis.application.catalog import CatalogService
+
+    svc = CatalogService(container.clock, container.catalog)
+    test_cases = [
+        {"input": tc.input, "expected": tc.expected, "metadata": tc.metadata}
+        for tc in payload.test_cases
+    ]
+    version = svc.register_dataset(org, payload.project_id, payload.name, payload.label, test_cases)
+    audit(container, actor, "dataset.registered", "dataset", version.dataset_id)
     return _dataset_out(container, version)
 
 

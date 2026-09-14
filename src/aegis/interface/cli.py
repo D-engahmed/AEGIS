@@ -26,18 +26,7 @@ from collections.abc import Sequence
 
 import aegis
 from aegis.application.ports import TargetInvocationError, TargetInvocationRequest
-from aegis.domain.datasets import (
-    add_test_case,
-    create_dataset,
-    create_dataset_version,
-    lock_dataset_version,
-)
 from aegis.domain.experiments import ExperimentSnapshot, create_experiment
-from aegis.domain.targets import (
-    TargetType,
-    create_target,
-    create_target_version,
-)
 from aegis.infrastructure.recordings import (
     InvocationRecord,
     RecordedTrafficTargetClient,
@@ -50,40 +39,34 @@ from aegis.policy.models import GateSeverity
 
 
 def _load_dataset(cli: Container, source: str, label: str):
+    from aegis.application.catalog import CatalogService
+
     with open(source, encoding="utf-8") as handle:
         raw = json.load(handle)
-    dataset = create_dataset(cli.clock, "org:1", "prj:1", raw.get("name", "cli-dataset"))
-    version, _ = create_dataset_version(cli.clock, dataset, label)
-    for case in raw.get("test_cases", []):
-        version, _ = add_test_case(
-            cli.clock,
-            version,
-            input=case.get("input"),
-            expected=case.get("expected"),
-            metadata=case.get("metadata", {}),
-        )
-    locked, _ = lock_dataset_version(cli.clock, version)
-    cli.catalog.register_dataset(locked)
-    return locked
+    test_cases = [
+        {"input": c.get("input"), "expected": c.get("expected"), "metadata": c.get("metadata", {})}
+        for c in raw.get("test_cases", [])
+    ]
+    svc = CatalogService(cli.clock, cli.catalog)
+    return svc.register_dataset_locked(
+        "org:1", "prj:1", raw.get("name", "cli-dataset"), label, test_cases
+    )
 
 
 def _load_target(cli: Container, target_spec: dict, label: str, commit_sha: str | None):
-    target = create_target(
-        cli.clock,
+    from aegis.application.catalog import CatalogService
+    from aegis.domain.targets import TargetType
+
+    svc = CatalogService(cli.clock, cli.catalog)
+    return svc.register_target(
         "org:1",
         "prj:1",
         target_spec.get("name", "cli-target"),
         TargetType(target_spec.get("target_type", "llm_application")),
-    )
-    version = create_target_version(
-        cli.clock,
-        target,
         label,
-        config=target_spec.get("config", {}),
+        target_spec.get("config", {}),
         commit_sha=commit_sha,
     )
-    cli.catalog.register_target(version)
-    return version
 
 
 def _rest_client(target_version) -> RestTargetClient | RecordedTrafficTargetClient:
