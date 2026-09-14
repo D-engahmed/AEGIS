@@ -181,6 +181,7 @@ class Container:
 
         self.runner = EvaluationRunner(
             self.clock,
+            engine_factory=self._make_engine,
             experiments=self.experiments,
             runs=self.runs,
             executions=self.executions,
@@ -208,4 +209,29 @@ class Container:
                     "memory-adapters", HealthStatus.HEALTHY, "in-memory stores ready"
                 ),
             ]
+        )
+
+    def _make_engine(self, client, run_gates=None):
+        """Create an ExecutionEngine for a given target client.
+
+        This is the concrete factory injected into EvaluationRunner so the
+        runner never imports execution-layer concretions directly.
+        """
+        from aegis.execution.engine import ExecutionEngine
+
+        return ExecutionEngine(
+            client=client,
+            gateway=self.runner._gateway,
+            runs=self.runs,
+            executions=self.executions,
+            results=self.results,
+            catalog=self.catalog,
+            cancellations=self.cancellations,
+            clock=self.clock,
+            experiments=self.experiments,
+            retry=self.runner._retry,
+            timeouts=self.runner._timeouts,
+            sleep=self.runner._sleep,
+            tracer_provider=self.runner._tracer_provider,
+            run_gates=run_gates if run_gates is not None else self.run_gates,
         )

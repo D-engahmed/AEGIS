@@ -7,12 +7,12 @@ persisted evidence records. It is the application-facing entry point both the CL
 exercised exactly once.
 
 No HTTP framework and no queue internals live here; the runner composes the
-execution layer and the application services already owned by the container.
+execution layer through injected ports, never importing execution concretions.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from aegis.application.ports import (
@@ -23,6 +23,7 @@ from aegis.application.ports import (
     ExperimentRepository,
     Queue,
     ResultRepository,
+    RunExecutor,
     RunRepository,
     TargetClient,
 )
@@ -36,14 +37,11 @@ from aegis.domain import (
     TargetVersion,
 )
 from aegis.domain.execution import run_created
+from aegis.domain.policies import RetryPolicy, TimeoutPolicy
 from aegis.domain.time import Clock
 from aegis.evidence.build import link_evidence_to_score
 from aegis.evidence.models import EvidenceRecord
 from aegis.evidence.ports import EvidenceRepository
-from aegis.execution.engine import ExecutionEngine
-from aegis.execution.retry import RetryPolicy
-from aegis.execution.timeout import TimeoutPolicy
-from aegis.execution.worker import ExecutionWorker
 from aegis.policy.ports import RunGateStore
 
 
@@ -63,6 +61,7 @@ class EvaluationRunner:
         self,
         clock: Clock,
         *,
+        engine_factory: Callable[[TargetClient, RunGateService | None], RunExecutor],
         experiments: ExperimentRepository,
         runs: RunRepository,
         executions: ExecutionRepository,
@@ -80,6 +79,7 @@ class EvaluationRunner:
         sleep=None,
     ) -> None:
         self._clock = clock
+        self._engine_factory = engine_factory
         self._experiments = experiments
         self._runs = runs
         self._executions = executions
@@ -96,24 +96,9 @@ class EvaluationRunner:
         self._tracer_provider = tracer_provider
         self._sleep = sleep or (lambda _seconds: None)
 
-    def engine(self, client: TargetClient, run_gates=None) -> ExecutionEngine:
+    def engine(self, client: TargetClient, run_gates: RunGateService | None = None) -> RunExecutor:
         """Build the execution engine over a concrete target client."""
-        return ExecutionEngine(
-            client=client,
-            gateway=self._gateway,
-            runs=self._runs,
-            executions=self._executions,
-            results=self._results,
-            catalog=self._catalog,
-            cancellations=self._cancellations,
-            clock=self._clock,
-            experiments=self._experiments,
-            retry=self._retry,
-            timeouts=self._timeouts,
-            sleep=self._sleep,
-            tracer_provider=self._tracer_provider,
-            run_gates=run_gates if run_gates is not None else self._run_gates,
-        )
+        return self._engine_factory(client, run_gates if run_gates is not None else self._run_gates)
 
     def run(
         self,
@@ -146,15 +131,14 @@ class EvaluationRunner:
         self._runs.save(run)
         self._queue.put(run.id)
 
-        engine = self.engine(client, run_gates=run_gates)
-        worker = ExecutionWorker(engine, self._queue)
-        worker.process_next()
+        executor = self.engine(client, run_gates=run_gates)
+        executor.run(run.id)
 
         return self.finish_run(run.id)
 
     def drain(
         self,
-        client_factory,
+        client_factory: Callable[[TargetVersion], TargetClient],
         *,
         count: int | None = None,
     ) -> int:
@@ -175,8 +159,8 @@ class EvaluationRunner:
                 run = self._runs.load(job_id)
                 if not run.status.terminal:
                     tv = self._catalog.load_target_version(run.snapshot.target_version_id)
-                    engine = self.engine(client_factory(tv))
-                    engine.run(job_id)
+                    executor = self.engine(client_factory(tv))
+                    executor.run(job_id)
                 self.finish_run(job_id)
             except Exception:
                 self._queue.abandon(job_id)

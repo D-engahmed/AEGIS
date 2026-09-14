@@ -12,8 +12,16 @@ from aegis.domain.datasets import (
     create_dataset_version,
     lock_dataset_version,
 )
-from aegis.domain.experiments import ExperimentSnapshot, create_experiment
+from aegis.domain.experiments import (
+    Experiment,
+    ExperimentSnapshot,
+    ExperimentStatus,
+    create_experiment,
+)
 from aegis.domain.targets import TargetType, create_target, create_target_version
+from aegis.execution.engine import ExecutionEngine
+from aegis.execution.retry import RetryPolicy
+from aegis.execution.timeout import TimeoutPolicy
 from aegis.infrastructure.memory import (
     InMemoryCancellationRegistry,
     InMemoryDataCatalog,
@@ -58,12 +66,45 @@ def _build(clock, cases: tuple[tuple[str, str], ...]):
         ),
     )
 
+    experiments = MemoryExperimentRepository()
+    experiments.save(
+        Experiment(
+            id=experiment.id,
+            organization_id=experiment.organization_id,
+            project_id=experiment.project_id,
+            name="fixture-harness",
+            snapshot=experiment.snapshot,
+            created_at=experiment.created_at,
+            status=ExperimentStatus.RUNNING,
+        )
+    )
+    runs = MemoryRunRepository()
+    executions = MemoryExecutionRepository()
+    results = MemoryResultRepository()
+
+    def _make_engine(client, run_gates=None):
+        return ExecutionEngine(
+            client=client,
+            gateway=EvaluationService(clock),
+            runs=runs,
+            executions=executions,
+            results=results,
+            catalog=catalog,
+            cancellations=InMemoryCancellationRegistry(),
+            clock=clock,
+            experiments=experiments,
+            retry=RetryPolicy(),
+            timeouts=TimeoutPolicy(),
+            run_gates=run_gates,
+        )
+
     runner = EvaluationRunner(
         clock,
-        experiments=MemoryExperimentRepository(),
-        runs=MemoryRunRepository(),
-        executions=MemoryExecutionRepository(),
-        results=MemoryResultRepository(),
+        engine_factory=_make_engine,
+        experiments=experiments,
+        runs=runs,
+        executions=executions,
+        results=results,
         catalog=catalog,
         cancellations=InMemoryCancellationRegistry(),
         queue=MemoryQueue(),

@@ -27,7 +27,9 @@ from aegis.domain.datasets import (
 from aegis.domain.experiments import ExperimentSnapshot, create_experiment
 from aegis.domain.failures import FailureCode
 from aegis.domain.targets import TargetType, create_target, create_target_version
+from aegis.execution.engine import ExecutionEngine
 from aegis.execution.retry import RetryPolicy
+from aegis.execution.timeout import TimeoutPolicy
 from aegis.infrastructure.memory import (
     InMemoryCancellationRegistry,
     InMemoryDataCatalog,
@@ -123,8 +125,26 @@ def _build_runner(clock, retry: RetryPolicy, sleep):
         ),
     )
 
+    def _make_engine(client, run_gates=None):
+        return ExecutionEngine(
+            client=client,
+            gateway=EvaluationService(clock),
+            runs=runs,
+            executions=executions,
+            results=results,
+            catalog=catalog,
+            cancellations=InMemoryCancellationRegistry(),
+            clock=clock,
+            experiments=experiments,
+            retry=retry,
+            timeouts=TimeoutPolicy(),
+            sleep=sleep or (lambda _seconds: None),
+            run_gates=run_gates,
+        )
+
     runner = EvaluationRunner(
         clock,
+        engine_factory=_make_engine,
         experiments=experiments,
         runs=runs,
         executions=executions,
