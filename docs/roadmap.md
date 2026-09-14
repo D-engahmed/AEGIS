@@ -819,14 +819,14 @@ Developer commits
 
 ## Next commits (immediate, by phase 2)
 
-### Commit 1 — `feat: enforce tenant isolation on run-scoped reads`
+### Commit 1 — `feat: enforce tenant isolation on run-scoped reads` ✅ (`8f53bf1`)
 
-**This is the current in-progress commit.**
-
-- Load run, verify `run.organization_id == actor.org` before returning
-  results, evidence, or analysis.
-- Cross-tenant negative tests proving a run ID from org B returns 404
-  when requested by org A.
+- [x] Load run, verify `run.organization_id == actor.org` before returning
+      results, evidence, or analysis.
+- [x] Cross-tenant negative tests proving a run in org B returns 404 when
+      requested by org A (and a foreign cancel does not mutate the run).
+- [ ] Persist organizations instead of synthesizing them from the token
+      (subsequent commit)
 
 ### Subsequent commits
 
