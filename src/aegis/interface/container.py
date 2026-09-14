@@ -28,7 +28,6 @@ from aegis.application.run_gates import RunGateService
 from aegis.application.runner import EvaluationRunner
 from aegis.application.services import ExperimentService, RunService
 from aegis.domain.time import Clock, SystemClock
-from aegis.evidence.graph import InMemoryEvidenceGraph
 from aegis.evidence.ports import ArtifactManager, EvidenceRepository, ProvenanceQuery
 from aegis.infrastructure.memory import (
     InMemoryCancellationRegistry,
@@ -167,8 +166,6 @@ class Container:
         self.pii = RegexPIIDetector()
         self.classifier = DefaultClassificationAnnotator(self.pii)
         self.secrets = InMemorySecretsProvider()
-
-        self.evidence_graph = InMemoryEvidenceGraph()
 
         otlp_endpoint = os.environ.get("AEGIS_OTEL_ENDPOINT")
         self.tracer_provider = InMemoryTracerProvider(
