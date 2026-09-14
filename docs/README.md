@@ -45,20 +45,22 @@ Start at this file. Then follow the recommended reading path below based on what
 ## Recommended Reading Path
 
 1. **Read this file** (`docs/README.md`) to understand what AEGIS is and what it is not.
-2. **Read `docs/requirements/README.md`** to understand what the system must do.
-3. **Read `docs/requirements/functional-requirements.md`** for the functional requirement areas and attribute template.
-4. **Read `docs/requirements/non-functional-requirements.md`** for performance, availability, and reliability targets.
-5. **Read `docs/requirements/acceptance-criteria.md`** to understand how feature completion is defined.
-6. **Read `docs/requirements/assumptions-and-constraints.md`** for the traceability matrix and architectural constraints.
-7. **Read `docs/architecture/`** for high-level and detailed architecture decisions.
-8. **Read `docs/development/`** for layer boundaries and implementation protocols.
-9. **Read `docs/testing/`** for the test pyramid and manual testing rules.
-10. **Read `docs/ci-cd/`** for quality gates and deployment rules.
+2. **Read `docs/roadmap.md`** to understand the product plan and the phase order.
+3. **Read `docs/requirements/README.md`** to understand what the system must do.
+4. **Read `docs/requirements/functional-requirements.md`** for the functional requirement areas and attribute template.
+5. **Read `docs/requirements/non-functional-requirements.md`** for performance, availability, and reliability targets.
+6. **Read `docs/requirements/acceptance-criteria.md`** to understand how feature completion is defined.
+7. **Read `docs/requirements/assumptions-and-constraints.md`** for the traceability matrix and architectural constraints.
+8. **Read `docs/architecture/`** for high-level and detailed architecture decisions.
+9. **Read `docs/development/`** for layer boundaries and implementation protocols.
+10. **Read `docs/testing/`** for the test pyramid and manual testing rules.
+11. **Read `docs/ci-cd/`** for quality gates and deployment rules.
 
 ## Where to Find Things
 
 | What You Need | Where to Look |
 |---|---|
+| Product roadmap and phase order | `docs/roadmap.md` |
 | Execution rules for agents and developers | `docs/development/` and `docs/implementation/` |
 | Architecture Decision Records | `docs/architecture/architecture-decision-records/` |
 | Testing rules and test pyramid | `docs/testing/` |

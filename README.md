@@ -38,6 +38,9 @@ those agents actually work?"* for anything ancient builds and runs.
 The full roadmap is defined in [`docs/implementation/implementation-order.md`](docs/implementation/implementation-order.md)
 and traced against requirements in [`docs/requirements/`](docs/requirements).
 
+The product plan and the order in which new capability is built — inside the
+frozen architecture boundaries — is [`docs/roadmap.md`](docs/roadmap.md).
+
 ---
 
 ## What is verified (the vertical slice)
