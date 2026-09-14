@@ -24,6 +24,7 @@ def list_run_evidence(
 ) -> list[EvidenceRecordOut]:
     """List write-once evidence records for a run."""
     actor.organization.require_membership(actor.context.user_id)
+    container.run_service.require_run(actor.organization, run_id)
     records = container.evidence_repository.list_for_run(run_id)
     return [record_out(r) for r in records]
 
@@ -42,6 +43,7 @@ def get_provenance(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no evidence found for metric result {metric_result_id!r}",
         )
+    container.run_service.require_run(actor.organization, records[0].run_id)
     snapshot = records[0].provenance
     return provenance_out(snapshot)
 
@@ -58,6 +60,7 @@ def get_evidence(
         record = container.evidence_repository.get(evidence_id)
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    container.run_service.require_run(actor.organization, record.run_id)
     return record_out(record)
 
 

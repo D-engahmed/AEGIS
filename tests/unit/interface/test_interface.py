@@ -241,6 +241,18 @@ def test_evidence_endpoints(
         created_at=container.clock.now(),
         status=ExperimentStatus.CREATED,
     )
+    from aegis.domain.execution import Run
+
+    run = Run(
+        id="run:1",
+        organization_id="org:1",
+        project_id="prj:1",
+        experiment_id="exp:1",
+        snapshot=experiment.snapshot,
+        created_by="alice",
+        created_at=container.clock.now(),
+    )
+    container.runs.save(run)
     result = MetricResult(
         id="mtr:1",
         run_id="run:1",

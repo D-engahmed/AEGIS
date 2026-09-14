@@ -13,6 +13,7 @@ from aegis.domain import (
     InvalidState,
     NotFound,
 )
+from aegis.domain.execution import Run
 from aegis.domain.experiments import create_experiment
 from aegis.domain.tenants import Organization
 from aegis.domain.time import Clock
@@ -156,6 +157,17 @@ class RunService:
         self._queue.put(run.id)
         return RunView.from_run(run)
 
+    def require_run(self, organization: Organization, run_id: str) -> Run:
+        """Load a run owned by the caller's tenant.
+
+        Runs in another tenant are indistinguishable from missing runs (both
+        raise NotFound), so a foreign run id never leaks existence.
+        """
+        run = self._runs.load(run_id)
+        if run.organization_id != organization.id:
+            raise NotFound(f"run {run_id!r} not found")
+        return run
+
     def cancel(
         self,
         organization: Organization,
@@ -163,7 +175,7 @@ class RunService:
         run_id: str,
     ) -> RunView:
         organization.require_membership(actor)
-        run = self._runs.load(run_id)
+        run = self.require_run(organization, run_id)
         if run.status.terminal:
             raise InvalidState(f"run {run_id!r} is already {run.status.value}")
         cancelled = run.cancel(actor, self._clock.now(), summary=run.evidence_summary)
@@ -178,7 +190,7 @@ class RunService:
         run_id: str,
     ) -> RunView:
         organization.require_membership(actor)
-        return RunView.from_run(self._runs.load(run_id))
+        return RunView.from_run(self.require_run(organization, run_id))
 
     def list(
         self,

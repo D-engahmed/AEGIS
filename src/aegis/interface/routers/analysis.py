@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from aegis.domain import MetricResult
+from aegis.domain.tenants import Organization
 from aegis.security.models import Permission
 
 from ..container import Container
@@ -18,9 +19,12 @@ from ..schemas import TrendReportOut
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
 
-def _load_metric_results(container: Container, run_ids: list[str]) -> list[MetricResult]:
+def _load_metric_results(
+    container: Container, organization: Organization, run_ids: list[str]
+) -> list[MetricResult]:
     results: list[MetricResult] = []
     for run_id in run_ids:
+        container.run_service.require_run(organization, run_id)
         results.extend(container.results.list_for_run(run_id))
     return results
 
@@ -37,7 +41,7 @@ def analyze_trend(
     runs = run_ids or []
     historical: list[tuple[datetime, str, list[MetricResult]]] = []
     for run_id in runs:
-        run = container.runs.load(run_id)
+        run = container.run_service.require_run(actor.organization, run_id)
         historical.append((run.created_at, run_id, container.results.list_for_run(run_id)))
     report = container.trends.analyze(metric_name, historical)
     return trend_report_out(report)
@@ -53,6 +57,8 @@ def detect_regression(
 ) -> object:
     """Detect statistically significant per-metric regressions between two runs."""
     actor.organization.require_membership(actor.context.user_id)
+    container.run_service.require_run(actor.organization, baseline_run_id)
+    container.run_service.require_run(actor.organization, current_run_id)
     baseline = container.results.list_for_run(baseline_run_id)
     current = container.results.list_for_run(current_run_id)
     try:
@@ -73,8 +79,9 @@ def compare_experiments(
 ) -> object:
     """Compare two groups of runs on shared metrics (Welch's t-test)."""
     actor.organization.require_membership(actor.context.user_id)
-    results_a = _load_metric_results(container, run_ids_a or [])
-    results_b = _load_metric_results(container, run_ids_b or [])
+    org = actor.organization
+    results_a = _load_metric_results(container, org, run_ids_a or [])
+    results_b = _load_metric_results(container, org, run_ids_b or [])
     try:
         return container.comparator.compare(results_a, results_b)
     except ValueError as exc:
@@ -91,7 +98,7 @@ def failure_clusters(
 ) -> object:
     """Cluster failed scores into root-cause categories for the given runs."""
     actor.organization.require_membership(actor.context.user_id)
-    results = _load_metric_results(container, run_ids or [])
+    results = _load_metric_results(container, actor.organization, run_ids or [])
     failed = [r for r in results if r.score is not None and r.severity == "critical"]
     return container.failure_classifier.classify(failed)
 

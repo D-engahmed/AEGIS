@@ -79,6 +79,7 @@ def list_run_results(
 ) -> list[MetricResultOut]:
     """List the metric results produced for a run (optionally filtered)."""
     actor.organization.require_membership(actor.context.user_id)
+    container.run_service.require_run(actor.organization, run_id)
     results = container.results.list_for_run(run_id)
     if metric_name is not None:
         results = [r for r in results if r.metric_name == metric_name]
