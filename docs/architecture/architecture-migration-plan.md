@@ -268,10 +268,10 @@ Concretely:
    `application/catalog.py` with `CatalogService`; both router and CLI
    delegate to it. Fixed CLI bug (missing `register_target_record`).
    Gate: 275 unit, 19 integration, 27/27 E2E — all green.
-4. **Worker/CLI drain unification.** Route `cli.py drain_queue` through
-   `ExecutionWorker.process_next` + `runner.finish_run` (the canonical path
-   at `runner.py:150-153`); delete the fused copy. Gate: integration worker
-   tests + E2E run-to-terminal.
+4. **Worker/CLI drain unification.** ✅ (`9fac3f0`) Added
+   `EvaluationRunner.drain(client_factory, count)` encapsulating the full
+   drain loop; CLI `drain_queue` simplified to one-liner delegation.
+   Gate: 275 unit, 19 integration, 27/27 E2E — all green.
 5. **Execution concretions behind ports.** Inject engine/worker/retry/timeout
    as ports into `EvaluationRunner`; fix the `infrastructure → execution`
    import. Gate: mypy + unit + integration.
