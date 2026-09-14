@@ -11,7 +11,15 @@ import hashlib
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
-from aegis.application.ports import CancellationRegistry
+from aegis.application.ports import (
+    CancellationRegistry,
+    DataCatalog,
+    ExecutionRepository,
+    ExperimentRepository,
+    Queue,
+    ResultRepository,
+    RunRepository,
+)
 from aegis.domain import (
     Conflict,
     Dataset,
@@ -33,10 +41,12 @@ from aegis.evidence.models import (
     EvidenceRecord,
     ProvenanceSnapshot,
 )
+from aegis.evidence.ports import ArtifactManager, EvidenceRepository, ProvenanceQuery
 from aegis.policy.models import RunGateReport
+from aegis.policy.ports import RunGateStore
 
 
-class MemoryExperimentRepository:
+class MemoryExperimentRepository(ExperimentRepository):
     def __init__(self) -> None:
         self._items: dict[str, Experiment] = {}
 
@@ -60,7 +70,7 @@ class MemoryExperimentRepository:
         ]
 
 
-class MemoryRunRepository:
+class MemoryRunRepository(RunRepository):
     def __init__(self) -> None:
         self._items: dict[str, Run] = {}
         self._by_key: dict[str, Run] = {}
@@ -88,7 +98,7 @@ class MemoryRunRepository:
         return [r for r in self._items.values() if r.experiment_id == experiment_id]
 
 
-class MemoryExecutionRepository:
+class MemoryExecutionRepository(ExecutionRepository):
     """One live row per execution id (state transitions upsert), indexed by run."""
 
     def __init__(self) -> None:
@@ -107,7 +117,7 @@ class MemoryExecutionRepository:
         return [ex for ex in self._items.values() if ex.run_id == run_id]
 
 
-class MemoryResultRepository:
+class MemoryResultRepository(ResultRepository):
     """Results are write-once: a duplicate metric id is a conflict."""
 
     def __init__(self) -> None:
@@ -125,7 +135,7 @@ class MemoryResultRepository:
         return list(self._by_run.get(run_id, []))
 
 
-class InMemoryDataCatalog:
+class InMemoryDataCatalog(DataCatalog):
     def __init__(self) -> None:
         self._targets: dict[str, Target] = {}
         self._target_versions: dict[str, TargetVersion] = {}
@@ -201,7 +211,7 @@ class InMemoryCancellationRegistry(CancellationRegistry):
         self._tokens.clear()
 
 
-class MemoryQueue:
+class MemoryQueue(Queue):
     """FIFO job queue with claim/complete/abandon semantics."""
 
     def __init__(self, job_ids: Iterable[str] = ()) -> None:
@@ -234,7 +244,7 @@ class MemoryQueue:
         return set(self._claimed)
 
 
-class MemoryEvidenceRepository:
+class MemoryEvidenceRepository(EvidenceRepository):
     """Write-once evidence records: duplicate persist is a conflict, no updates."""
 
     def __init__(self) -> None:
@@ -265,7 +275,7 @@ class MemoryEvidenceRepository:
         return evidence_id in self._items
 
 
-class MemoryProvenanceIndex:
+class MemoryProvenanceIndex(ProvenanceQuery):
     """Executes provenance_for_result / provenance_for_execution lookups."""
 
     def __init__(self) -> None:
@@ -287,7 +297,7 @@ class MemoryProvenanceIndex:
         return self._by_execution[execution_id]
 
 
-class MemoryRunGateStore:
+class MemoryRunGateStore(RunGateStore):
     """In-memory store for persisted run gate reports (override replaces)."""
 
     def __init__(self) -> None:
@@ -305,7 +315,7 @@ class MemoryRunGateStore:
         return run_id in self._reports
 
 
-class MemoryArtifactManager:
+class MemoryArtifactManager(ArtifactManager):
     """In-memory object storage: content-hashes payloads, keeps references."""
 
     def __init__(self) -> None:

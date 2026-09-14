@@ -18,6 +18,14 @@ from typing import Any
 
 import psycopg
 
+from aegis.application.ports import (
+    CancellationRegistry,
+    DataCatalog,
+    ExecutionRepository,
+    ExperimentRepository,
+    ResultRepository,
+    RunRepository,
+)
 from aegis.domain import (
     Conflict,
     Dataset,
@@ -47,8 +55,10 @@ from aegis.evidence.models import (
     EvidenceRecord,
     ProvenanceSnapshot,
 )
+from aegis.evidence.ports import ArtifactManager, EvidenceRepository, ProvenanceQuery
 from aegis.infrastructure.serde import from_plain, to_plain
 from aegis.policy.models import GateDecision, GateOverride, RunGateReport, RunGateVerdict, Verdict
+from aegis.policy.ports import RunGateStore
 
 
 class Psql:
@@ -187,7 +197,7 @@ def aegis_policy_severity(value: str):
     return GateSeverity(value)
 
 
-class PostgresExperimentRepository:
+class PostgresExperimentRepository(ExperimentRepository):
     def __init__(self, db: Psql) -> None:
         self._db = db
 
@@ -256,7 +266,7 @@ def _experiment_status(value: str):
     return ExperimentStatus(value)
 
 
-class PostgresRunRepository:
+class PostgresRunRepository(RunRepository):
     def __init__(self, db: Psql) -> None:
         self._db = db
 
@@ -360,7 +370,7 @@ def _run_status(value: str):
     return RunStatus(value)
 
 
-class PostgresExecutionRepository:
+class PostgresExecutionRepository(ExecutionRepository):
     def __init__(self, db: Psql) -> None:
         self._db = db
 
@@ -446,7 +456,7 @@ def _execution_status(value: str):
     return ExecutionStatus(value)
 
 
-class PostgresResultRepository:
+class PostgresResultRepository(ResultRepository):
     def __init__(self, db: Psql) -> None:
         self._db = db
 
@@ -517,7 +527,7 @@ def _metric_from(row) -> MetricResult:
     )
 
 
-class PostgresDataCatalog:
+class PostgresDataCatalog(DataCatalog):
     def __init__(self, db: Psql) -> None:
         self._db = db
 
@@ -743,7 +753,7 @@ def _dataset_version_from(row, test_rows) -> DatasetVersion:
     )
 
 
-class PostgresCancellationRegistry:
+class PostgresCancellationRegistry(CancellationRegistry):
     def __init__(self, db: Psql) -> None:
         self._db = db
 
@@ -770,7 +780,7 @@ class PostgresCancellationRegistry:
         return row[0] if row else None
 
 
-class PostgresEvidenceRepository:
+class PostgresEvidenceRepository(EvidenceRepository):
     def __init__(self, db: Psql) -> None:
         self._db = db
 
@@ -857,7 +867,7 @@ def _evidence_from(row) -> EvidenceRecord:
     )
 
 
-class PostgresProvenanceIndex:
+class PostgresProvenanceIndex(ProvenanceQuery):
     def __init__(self, db: Psql) -> None:
         self._db = db
 
@@ -892,7 +902,7 @@ class PostgresProvenanceIndex:
         return _provenance_from(from_plain(row[0]))
 
 
-class PostgresArtifactManager:
+class PostgresArtifactManager(ArtifactManager):
     def __init__(self, db: Psql) -> None:
         self._db = db
 
@@ -964,7 +974,7 @@ class PostgresArtifactManager:
             cur.execute("DELETE FROM evidence_artifacts WHERE artifact_id = %s", (artifact_id,))
 
 
-class PostgresRunGateStore:
+class PostgresRunGateStore(RunGateStore):
     def __init__(self, db: Psql) -> None:
         self._db = db
 
