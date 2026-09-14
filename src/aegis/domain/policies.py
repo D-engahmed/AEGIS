@@ -68,13 +68,4 @@ class TimeoutPolicy:
         return now > since + timedelta(seconds=within_seconds)
 
 
-def test_timeout_remaining(policy: TimeoutPolicy, started_at: datetime) -> float:
-    """Return the wall-seconds left in the per-test budget as of `started_at` context.
-
-    This helper exists for adapter wiring; the engine enforces real deadlines
-    against the injected clock.
-    """
-    return policy.per_test_seconds
-
-
-__all__ = ["RetryPolicy", "TimeoutPolicy", "test_timeout_remaining"]
+__all__ = ["RetryPolicy", "TimeoutPolicy"]
