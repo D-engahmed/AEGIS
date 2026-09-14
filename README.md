@@ -30,10 +30,10 @@ those agents actually work?"* for anything ancient builds and runs.
 | 0 | Scaffold: packaging, layer layout, gates, CI | ✅ done |
 | 1 | Domain layer: tenancy, targets/versions (immutability), datasets (draft→lock), events, registry | ✅ done |
 | 2 | Application layer (services, ports, evaluation service) | ✅ done |
-| 3 | Interface: single `aegis` CLI (`version`/`probe`/`evaluate`/`worker`) + console script | ✅ done |
+| 3 | Interface: `aegis` CLI (`version`/`probe`/`record`/`evaluate`/`worker`/`serve`) + FastAPI surface + static `frontend/` dashboard | ✅ done |
 | 4 | Infrastructure: PostgreSQL + Redis adapters, migrations, in-memory fallbacks | ✅ done |
 | 5 | Execution: engine + queue worker + REST target adapter + evaluator plugins | ✅ done |
-| 6–11 | Gates (policy), evidence, observability, security | ✅ done (gates & immutable evidence proven; OTel trace store post-v0.1) |
+| 6–11 | Gates (policy), evidence, observability, security | ✅ done as built (gates & immutable evidence proven; OTel trace store, object-storage evidence, FEXL deferred post-v0.1) |
 
 The full roadmap is defined in [`docs/implementation/implementation-order.md`](docs/implementation/implementation-order.md)
 and traced against requirements in [`docs/requirements/`](docs/requirements).
@@ -43,7 +43,7 @@ and traced against requirements in [`docs/requirements/`](docs/requirements).
 ## What is verified (the vertical slice)
 
 The persisted vertical slice is implemented and proven against live infrastructure
-(`tests/integration/`, 18 tests, against the compose Postgres + Redis):
+(`tests/integration/`, 19 tests, against the compose Postgres + Redis):
 
 - **Queue worker** — runs submitted through `RunService` are claimed and executed
   by `aegis worker`; at-least-once redelivery with idempotent execution and

@@ -110,7 +110,7 @@ Not applicable. This layer is rule-based, not code-based.
 - Importing infrastructure code (SQLAlchemy, Redis client) directly in domain modules.
 - Calling external LLM providers from application services without going through the evaluation layer.
 - Allowing the execution layer to modify policy definitions.
-- Letting the dashboard (interface layer) directly query the database without going through application services.
+- Letting the dashboard — a separate static deployable that talks only to the API — bypass the API and query the database directly.
 - Treating boundary documentation as optional reading.
 
 ## Access Constraints (Verbatim)

@@ -54,6 +54,12 @@ Authentication results, authorization decisions, redacted data, classified recor
 
 ## 9. Forbidden Dependencies
 
+"No X" below means security does not *do* that layer's job — it does not
+follow that security is absent there. Security is cross-cutting: its
+services (auth, permissions, tenancy, PII, audit) are consumed by every
+layer, while the layer itself stays out of HTTP handling, scheduling, and
+metric computation.
+
 - Interface layer (03) -- security defines rules, it does not handle HTTP directly.
 - Execution layer (05) -- security does not schedule work.
 - Evaluation layer (06) -- security evaluates target systems, it does not compute metrics.

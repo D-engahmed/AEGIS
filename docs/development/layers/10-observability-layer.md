@@ -49,6 +49,12 @@ Exported traces (OpenTelemetry format), exported metrics, structured logs, and o
 
 ## 9. Forbidden Dependencies
 
+"No X" below means observability does not *do* that layer's job — it does
+not follow that observability is absent there. Its services (tracing,
+metrics, health, cost) are consumed across layers; the layer itself stays
+out of HTTP handling, scheduling, metric computation, and infrastructure
+ownership.
+
 - Interface layer (03) -- observability does not handle HTTP requests.
 - Execution layer (05) -- observability does not schedule work.
 - Evaluation layer (06) -- observability monitors evaluation, it does not perform it.
