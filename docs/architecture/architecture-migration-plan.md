@@ -259,17 +259,15 @@ Concretely:
 
 ## 5. Migration order (small, reviewable, reversible steps)
 
-1. **Phase 2 — Freeze behavior.** Run the full gate
-   (ruff, format, mypy, domain purity, docs validation, unit, integration
-   with compose stores, Playwright E2E) and record the baseline below. No
-   refactor starts from a red baseline without documenting the failure.
-2. **Policy router thinning (smallest capability slice).** Move override
-   orchestration + audit metadata (`routers/policy.py:99-115`) and the
-   severity-selection rule (`:88`) into `RunGateService`; routers keep
-   validation + mapping. Gate: unit + E2E policy flow.
-3. **Catalog service extraction.** Introduce a catalog application service
-   covering `routers/catalog.py:135-175` and retire the `cli.py:52-86`
-   duplication; one implementation, two callers. Gate: unit + E2E catalog flow.
+1. **Phase 2 — Freeze behavior.** ✅ (`0817ff2`) Baseline recorded below.
+2. **Policy router thinning (smallest capability slice).** ✅ (`55e1250`)
+   Moved override orchestration + severity selection into
+   `RunGateService.override_blocked()`; router thinned to auth + DTO + audit.
+   Gate: 275 unit, 19 integration, 27/27 E2E — all green.
+3. **Catalog service extraction.** ✅ (`3ec8227`) Created
+   `application/catalog.py` with `CatalogService`; both router and CLI
+   delegate to it. Fixed CLI bug (missing `register_target_record`).
+   Gate: 275 unit, 19 integration, 27/27 E2E — all green.
 4. **Worker/CLI drain unification.** Route `cli.py drain_queue` through
    `ExecutionWorker.process_next` + `runner.finish_run` (the canonical path
    at `runner.py:150-153`); delete the fused copy. Gate: integration worker
@@ -343,7 +341,7 @@ already green at the commit immediately prior to the format fix.
 |---|---|---|
 | Lint | `ruff check src tests scripts` | passed |
 | Format | `ruff format --check src tests scripts` | passed (after `073096a`) |
-| Type check | `mypy src` | passed, 98 source files |
+| Type check | `mypy src` | passed, 99 source files |
 | Domain purity | `scripts/check_domain_purity.py` | passed, 13 files |
 | Docs validation | `scripts/validate_docs.py` | passed, 103 markdown files |
 | Unit tests | `pytest -m unit -q --cov=aegis` | 275 passed, 89% coverage |
