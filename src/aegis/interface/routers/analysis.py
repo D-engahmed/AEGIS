@@ -12,7 +12,8 @@ from aegis.security.models import Permission
 
 from ..container import Container
 from ..deps import Actor, get_container, require_permission
-from ..schemas import TrendPointOut, TrendReportOut
+from ..mappers import trend_report_out
+from ..schemas import TrendReportOut
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -39,15 +40,7 @@ def analyze_trend(
         run = container.runs.load(run_id)
         historical.append((run.created_at, run_id, container.results.list_for_run(run_id)))
     report = container.trends.analyze(metric_name, historical)
-    return TrendReportOut(
-        metric_name=report.metric_name,
-        data_points=[
-            TrendPointOut(timestamp=p.timestamp, score=p.score, run_id=p.run_id)
-            for p in report.data_points
-        ],
-        overall_trend=report.overall_trend.value,
-        analyzed_at=report.analyzed_at,
-    )
+    return trend_report_out(report)
 
 
 @router.get("/regression")

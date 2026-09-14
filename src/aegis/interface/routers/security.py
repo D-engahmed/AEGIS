@@ -14,6 +14,7 @@ from aegis.security.models import AuthMethod, Permission
 
 from ..container import Container
 from ..deps import Actor, get_container, require_permission
+from ..mappers import audit_entry_out, pii_redact_out, token_out
 from ..schemas import PiiRedactIn, PiiRedactOut, TokenOut
 
 router = APIRouter(prefix="/security", tags=["security"])
@@ -42,11 +43,7 @@ def dev_token(
         now=container.clock.now(),
     )
     context = container.auth.validate_token(token, now=container.clock.now())
-    return TokenOut(
-        token=token,
-        expires_at=context.token_expiry or context.authenticated_at,
-        authentication_method=context.authentication_method.value,
-    )
+    return token_out(token, context)
 
 
 @router.post("/tokens", response_model=TokenOut, status_code=201)
@@ -68,11 +65,7 @@ def issue_token(
         now=container.clock.now(),
     )
     context = container.auth.validate_token(token, now=container.clock.now())
-    return TokenOut(
-        token=token,
-        expires_at=context.token_expiry or context.authenticated_at,
-        authentication_method=context.authentication_method.value,
-    )
+    return token_out(token, context)
 
 
 @router.post("/pii/redact", response_model=PiiRedactOut)
@@ -84,18 +77,7 @@ def redact_pii(
     """Redact PII spans from free text; returns the masked text and match list."""
     actor.organization.require_membership(actor.context.user_id)
     matches = container.pii.detect(payload.text)
-    return PiiRedactOut(
-        redacted=container.pii.redact(payload.text),
-        pii_spans=[
-            {
-                "pii_type": m.pii_type.value,
-                "start": m.start,
-                "end": m.end,
-                "redacted_value": m.redacted_value,
-            }
-            for m in matches
-        ],
-    )
+    return pii_redact_out(container.pii.redact(payload.text), matches)
 
 
 @router.get("/audit")
@@ -112,20 +94,7 @@ def list_audit(
         actor_id=actor_id,
         resource_type=resource_type,
     )
-    return [
-        {
-            "event_id": e.event_id,
-            "timestamp": e.timestamp,
-            "actor_id": e.actor_id,
-            "action": e.action,
-            "resource_type": e.resource_type,
-            "resource_id": e.resource_id,
-            "organization_id": e.organization_id,
-            "result": e.result,
-            "metadata": e.metadata,
-        }
-        for e in entries
-    ]
+    return [audit_entry_out(e) for e in entries]
 
 
 @router.get("/now", include_in_schema=False)

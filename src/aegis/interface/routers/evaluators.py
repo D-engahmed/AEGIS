@@ -17,6 +17,7 @@ from aegis.evaluation.trajectory import list_trajectory_evaluators
 from aegis.security.models import Permission
 
 from ..deps import Actor, require_permission
+from ..mappers import evaluator_spec_out
 from ..schemas import EvaluatorSpecOut
 
 router = APIRouter(prefix="/evaluators", tags=["evaluators"])
@@ -28,30 +29,9 @@ def evaluator_catalog(
 ) -> list[EvaluatorSpecOut]:
     """List every scoring plugin available in this deployment."""
     actor.organization.require_membership(actor.context.user_id)
-    specs = [
-        EvaluatorSpecOut(
-            identity=e.identity,
-            version=e.version,
-            display_name=e.display_name,
-            metrics=list(e.metrics),
-            requires_trace=False,
-            severity=e.severity,
-            unit=e.unit,
-        )
-        for e in list_evaluators()
-    ]
+    specs = [evaluator_spec_out(e, requires_trace=False) for e in list_evaluators()]
     for t in list_trajectory_evaluators():
-        specs.append(
-            EvaluatorSpecOut(
-                identity=t.identity,
-                version=t.version,
-                display_name=t.display_name,
-                metrics=list(t.metrics),
-                requires_trace=True,
-                severity=t.severity,
-                unit=t.unit,
-            )
-        )
+        specs.append(evaluator_spec_out(t, requires_trace=True))
     specs.sort(key=lambda s: s.identity)
     return specs
 
