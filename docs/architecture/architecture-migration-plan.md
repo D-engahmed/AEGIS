@@ -293,10 +293,13 @@ Concretely:
    cost endpoint (live wire + SDK surface; removal would break contract,
    wiring it is a feature), empty `__init__` package markers.
    Gate: 275 unit, 27 contract, 19 integration — all green.
-8. **Architecture tests to CI.** Extend the purity script (or add one
-   beside it) with the §4 rules: no store access from routers, no
-   execution concretions in application, explicit port declarations.
-   Add integration + contract jobs to CI with compose services.
+8. **Architecture tests to CI.** ✅ (`4134544`+`aadbcc5`+`a4c7ae0`)
+   All infrastructure adapters declare their ports explicitly (mypy
+   enforces parity). New `scripts/check_layer_boundaries.py` (AST, incl.
+   lazy imports) enforces §4 direction rules + port declarations on all
+   112 files, wired into CI. Contract job added in step 5; new
+   `integration` CI job runs `pytest -m integration` against Postgres +
+   Redis service containers. E2E stays local-only (browsers + harness).
 9. **Docs triage.** Resolve §V5 contradictions as docs-only commits against
    the as-built code (routes stay flat; status sections updated). No
    behavior change rides along with a docs fix.
