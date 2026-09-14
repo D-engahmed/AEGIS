@@ -1,22 +1,9 @@
-"""Metric result mappers (shared by run and analysis routers)."""
+"""Deprecated: metric result mappers moved to interface.mappers.
 
-from __future__ import annotations
+Re-exported here for backward compatibility; import from
+``aegis.interface.mappers`` instead.
+"""
 
-from aegis.domain import MetricResult
-
-from ..schemas import MetricResultOut
-
-
-def metric_result_out(result: MetricResult) -> MetricResultOut:
-    return MetricResultOut(
-        id=result.id,
-        run_id=result.run_id,
-        execution_id=result.execution_id,
-        metric_name=result.metric_name,
-        score=result.score,
-        reason=result.reason,
-        severity=result.severity,
-    )
-
+from ..mappers.results import metric_result_out
 
 __all__ = ["metric_result_out"]

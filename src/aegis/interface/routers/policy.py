@@ -12,42 +12,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from aegis.policy.models import RunGateReport
 from aegis.security.models import Permission
 
 from ..container import Container
 from ..deps import Actor, get_container, require_permission
-from ..schemas import GateDecisionOut, GateOverrideIn, RunVerdictOut
+from ..mappers import verdict_out
+from ..schemas import GateOverrideIn, RunVerdictOut
 
 router = APIRouter(prefix="/policy", tags=["policy"])
-
-
-def _verdict_out(report: RunGateReport) -> RunVerdictOut:
-    return RunVerdictOut(
-        run_id=report.run_id,
-        verdict=report.verdict.value,
-        decisions=[
-            GateDecisionOut(
-                gate_id=d.gate_id,
-                verdict=d.verdict.value,
-                reason=d.reason,
-                severity=d.severity.value,
-            )
-            for d in report.decisions
-        ],
-        evaluated_at=report.evaluated_at,
-        overridden=report.override is not None,
-        override=(
-            {
-                "overridden_by": report.override.overridden_by,
-                "reason": report.override.reason,
-                "overridden_at": report.override.overridden_at,
-                "gate_ids": list(report.override.gate_ids),
-            }
-            if report.override is not None
-            else None
-        ),
-    )
 
 
 @router.get("/verdict/{run_id}", response_model=RunVerdictOut)
@@ -59,7 +31,7 @@ def run_verdict(
     """Fetch the persisted gate report (verdict + decisions) for a run."""
     actor.organization.require_membership(actor.context.user_id)
     report = container.run_gates.report(run_id)
-    return _verdict_out(report)
+    return verdict_out(report)
 
 
 @router.post("/verdict/{run_id}/override", response_model=RunVerdictOut, status_code=200)
@@ -88,7 +60,7 @@ def override_run_block(
             "gate_ids": list(updated.override.gate_ids) if updated.override else [],
         },
     )
-    return _verdict_out(updated)
+    return verdict_out(updated)
 
 
 @router.get("/now", include_in_schema=False)

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from aegis.domain import ExperimentSnapshot
 from aegis.security.models import Permission
 
 from ..container import Container
@@ -17,29 +15,10 @@ from ..deps import (
     get_container,
     require_permission,
 )
-from ..schemas import ExperimentCreateIn, ExperimentOut, ExperimentSnapshotOut, RunOut
+from ..mappers import experiment_out, run_out, snapshot_from_in
+from ..schemas import ExperimentCreateIn, ExperimentOut, RunOut
 
 router = APIRouter(prefix="/experiments", tags=["experiments"])
-
-
-def _experiment_out(experiment) -> ExperimentOut:
-    snapshot = experiment.snapshot
-    return ExperimentOut(
-        id=experiment.id,
-        organization_id=experiment.organization_id,
-        project_id=experiment.project_id,
-        name=experiment.name,
-        status=experiment.status.value,
-        created_at=experiment.created_at,
-        clone_of=experiment.clone_of,
-        snapshot=ExperimentSnapshotOut(
-            target_version_id=snapshot.target_version_id,
-            dataset_version_id=snapshot.dataset_version_id,
-            evaluator_version_ids=list(snapshot.evaluator_version_ids),
-            policy_version_id=snapshot.policy_version_id,
-            settings=dict(snapshot.settings),
-        ),
-    )
 
 
 @router.get("", response_model=list[ExperimentOut])
@@ -49,7 +28,7 @@ def list_experiments(
 ) -> list[ExperimentOut]:
     """List experiments within the caller's tenant, newest first."""
     experiments = container.experiment_service.list(actor.organization, actor.context.user_id)
-    return [_experiment_out(e) for e in experiments]
+    return [experiment_out(e) for e in experiments]
 
 
 @router.get("/{experiment_id}/runs", response_model=list[RunOut])
@@ -62,7 +41,7 @@ def list_experiment_runs(
     views = container.run_service.list(
         actor.organization, actor.context.user_id, experiment_id=experiment_id
     )
-    return [RunOut(**asdict(v)) for v in views]
+    return [run_out(v) for v in views]
 
 
 @router.post("", response_model=ExperimentOut, status_code=201)
@@ -72,13 +51,7 @@ def create_experiment(
     container: Annotated[Container, Depends(get_container)],
 ) -> ExperimentOut:
     """Create a new experiment from an immutable configuration snapshot."""
-    snapshot = ExperimentSnapshot(
-        target_version_id=payload.snapshot.target_version_id,
-        dataset_version_id=payload.snapshot.dataset_version_id,
-        evaluator_version_ids=tuple(payload.snapshot.evaluator_version_ids),
-        policy_version_id=payload.snapshot.policy_version_id,
-        settings=payload.snapshot.settings,
-    )
+    snapshot = snapshot_from_in(payload.snapshot)
     experiment = container.experiment_service.create(
         actor.organization,
         actor.context.user_id,
@@ -93,7 +66,7 @@ def create_experiment(
         "experiment",
         experiment.id,
     )
-    return _experiment_out(experiment)
+    return experiment_out(experiment)
 
 
 @router.get("/{experiment_id}", response_model=ExperimentOut)
@@ -106,7 +79,7 @@ def get_experiment(
     experiment = container.experiment_service.get(
         actor.organization, actor.context.user_id, experiment_id
     )
-    return _experiment_out(experiment)
+    return experiment_out(experiment)
 
 
 @router.post("/{experiment_id}/clone", response_model=ExperimentOut, status_code=201)
@@ -120,7 +93,7 @@ def clone_experiment(
         actor.organization, actor.context.user_id, experiment_id
     )
     audit(container, actor, "experiment.cloned", "experiment", experiment.id)
-    return _experiment_out(experiment)
+    return experiment_out(experiment)
 
 
 @router.post("/{experiment_id}/start", response_model=ExperimentOut)
@@ -134,7 +107,7 @@ def start_experiment(
         actor.organization, actor.context.user_id, experiment_id
     )
     audit(container, actor, "experiment.started", "experiment", experiment.id)
-    return _experiment_out(experiment)
+    return experiment_out(experiment)
 
 
 __all__ = ["router"]

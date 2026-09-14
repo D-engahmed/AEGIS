@@ -17,6 +17,7 @@ from aegis.security.models import Permission
 
 from ..container import Container
 from ..deps import Actor, audit, get_container, require_permission
+from ..mappers import dataset_out, target_out
 from ..schemas import (
     CatalogDatasetOut,
     CatalogOut,
@@ -29,32 +30,11 @@ router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 
 def _target_out(container: Container, version) -> CatalogTargetOut:
-    record = container.catalog.get_target(version.target_id)
-    return CatalogTargetOut(
-        id=version.id,
-        target_id=version.target_id,
-        project_id=version.project_id,
-        name=record.name,
-        target_type=record.target_type.value,
-        label=str(version.label),
-        config=dict(version.config),
-        created_at=version.created_at,
-        referenced=version.referenced,
-    )
+    return target_out(version, container.catalog.get_target(version.target_id))
 
 
 def _dataset_out(container: Container, version) -> CatalogDatasetOut:
-    record = container.catalog.get_dataset(version.dataset_id)
-    return CatalogDatasetOut(
-        id=version.id,
-        dataset_id=version.dataset_id,
-        project_id=version.project_id,
-        name=record.name,
-        label=str(version.label),
-        status=version.status.value,
-        test_case_count=version.test_case_count,
-        created_at=record.created_at,
-    )
+    return dataset_out(version, container.catalog.get_dataset(version.dataset_id))
 
 
 @router.get("", response_model=CatalogOut)

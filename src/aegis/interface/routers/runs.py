@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -11,8 +10,8 @@ from aegis.security.models import Permission
 
 from ..container import Container
 from ..deps import Actor, audit, get_container, require_permission
+from ..mappers import metric_result_out, run_out
 from ..schemas import MetricResultOut, RunOut, RunSubmitIn
-from .results import metric_result_out
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -28,7 +27,7 @@ def list_runs(
     views = container.run_service.list(
         actor.organization, actor.context.user_id, experiment_id=experiment_id, limit=limit
     )
-    return [RunOut(**asdict(v)) for v in views]
+    return [run_out(v) for v in views]
 
 
 @router.post("", response_model=RunOut, status_code=201)
@@ -45,7 +44,7 @@ def submit_run(
         payload.idempotency_key,
     )
     audit(container, actor, "run.submitted", "run", view.run_id)
-    return RunOut(**asdict(view))
+    return run_out(view)
 
 
 @router.get("/{run_id}", response_model=RunOut)
@@ -56,7 +55,7 @@ def get_run(
 ) -> RunOut:
     """Fetch the current status of a run."""
     view = container.run_service.status(actor.organization, actor.context.user_id, run_id)
-    return RunOut(**asdict(view))
+    return run_out(view)
 
 
 @router.post("/{run_id}/cancel", response_model=RunOut)
@@ -68,7 +67,7 @@ def cancel_run(
     """Request cooperative cancellation of a run."""
     view = container.run_service.cancel(actor.organization, actor.context.user_id, run_id)
     audit(container, actor, "run.cancelled", "run", run_id)
-    return RunOut(**asdict(view))
+    return run_out(view)
 
 
 @router.get("/{run_id}/results", response_model=list[MetricResultOut])
