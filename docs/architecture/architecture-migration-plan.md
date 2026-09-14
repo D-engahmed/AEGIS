@@ -272,9 +272,12 @@ Concretely:
    `EvaluationRunner.drain(client_factory, count)` encapsulating the full
    drain loop; CLI `drain_queue` simplified to one-liner delegation.
    Gate: 275 unit, 19 integration, 27/27 E2E — all green.
-5. **Execution concretions behind ports.** Inject engine/worker/retry/timeout
-   as ports into `EvaluationRunner`; fix the `infrastructure → execution`
-   import. Gate: mypy + unit + integration.
+5. **Execution concretions behind ports.** ✅ (`79ea022`+`0dae288`+`9473842`+`bea9d5f`)
+   Moved CancellationToken, RetryPolicy, TimeoutPolicy to domain layer.
+   Added RunExecutor port to application.ports. Injected engine_factory
+   into EvaluationRunner — application no longer imports from execution.
+   Fixed infrastructure→execution wrong-direction import.
+   Gate: 275 unit, 19 integration, 27/27 E2E — all green.
 6. **DTO parity.** Centralize mappers per capability (keep hand-written
    mappers; no codegen dependency — stdlib-first principle,
    `dependency-rules.md:71-77`); add contract tests asserting schema ↔
