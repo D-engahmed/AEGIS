@@ -169,6 +169,13 @@ class Queue(Protocol):
 
 
 @runtime_checkable
+class RunExecutor(Protocol):
+    """Adapter contract for executing a queued run through the engine."""
+
+    def run(self, run_id: str) -> Run: ...
+
+
+@runtime_checkable
 class CancellationRegistry(Protocol):
     """Holds cooperative cancellation tokens per run."""
 
@@ -205,6 +212,7 @@ __all__ = [
     "ExperimentRepository",
     "Queue",
     "ResultRepository",
+    "RunExecutor",
     "RunRepository",
     "TargetClient",
     "TargetInvocation",
