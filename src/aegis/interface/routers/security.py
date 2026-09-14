@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from aegis.domain.tenants import Role
-from aegis.domain.time import UTC
 from aegis.security.models import AuthMethod, Permission
 
 from ..container import Container
@@ -95,11 +93,6 @@ def list_audit(
         resource_type=resource_type,
     )
     return [audit_entry_out(e) for e in entries]
-
-
-@router.get("/now", include_in_schema=False)
-def server_time() -> str:
-    return datetime.now(UTC).isoformat()
 
 
 __all__ = ["router"]

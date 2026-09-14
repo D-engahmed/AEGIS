@@ -7,7 +7,6 @@ service account) may override, and every override is audited
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -61,13 +60,6 @@ def override_run_block(
         },
     )
     return verdict_out(updated)
-
-
-@router.get("/now", include_in_schema=False)
-def policy_time() -> str:
-    from aegis.domain.time import UTC
-
-    return datetime.now(UTC).isoformat()
 
 
 __all__ = ["router"]
