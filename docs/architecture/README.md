@@ -15,20 +15,21 @@ It records four things:
 
 ## Reading Order
 
-Read the architecture documentation in a fixed order. Each document builds on the previous one and refers forward to the ones that follow.
+Read the architecture documentation in a fixed order. Each document builds on the previous one and refers forward to the ones that follow. **First read the freeze**: `architecture-freeze.md` is the operating contract — it draws the line under the decisions below and defines what changing a frozen decision costs.
 
-1. **high-level-architecture.md** — the big picture: the three planes, the modular monolith decision, the connective principle.
-2. **system-context.md** — the boundary of the system and its relationships to actors and external systems.
-3. **container-architecture.md** — the deployable/runnable units (containers) of the modular monolith.
-4. **component-architecture.md** — the internal building blocks of the control plane and beyond, mapped to the development layers.
-5. **development-architecture.md** — the layered source structure of the codebase and its dependency rules.
-6. **read-architecture.md** and **write-architecture.md** — how data and control flow into and out of the system.
-7. **execution-architecture.md** — how work is scheduled, run, and contained across the execution plane.
-8. **evidence-architecture.md** — how traces, artifacts, results, provenance, and the evidence graph are produced and consumed.
-9. **security-architecture.md** — the threat model and authorization boundaries.
-10. **data-flow.md** — how data moves across planes and storage technologies.
-11. **failure-architecture.md** — how the system fails contained and degrades predictably.
-12. **architecture-decision-records/** — the recorded decisions that constrain all of the above.
+1. **architecture-freeze.md** — the current operating contract; what is frozen and what unfreezing requires.
+2. **high-level-architecture.md** — the big picture: the three planes, the modular monolith decision, the connective principle.
+3. **system-context.md** — the boundary of the system and its relationships to actors and external systems.
+4. **container-architecture.md** — the deployable/runnable units (containers) of the modular monolith.
+5. **component-architecture.md** — the internal building blocks of the control plane and beyond, mapped to the development layers.
+6. **development-architecture.md** — the layered source structure of the codebase and its dependency rules.
+7. **read-architecture.md** and **write-architecture.md** — how data and control flow into and out of the system.
+8. **execution-architecture.md** — how work is scheduled, run, and contained across the execution plane.
+9. **evidence-architecture.md** — how traces, artifacts, results, provenance, and the evidence graph are produced and consumed.
+10. **security-architecture.md** — the threat model and authorization boundaries.
+11. **data-flow.md** — how data moves across planes and storage technologies.
+12. **failure-architecture.md** — how the system fails contained and degrades predictably.
+13. **architecture-decision-records/** — the recorded decisions that constrain all of the above.
 
 ## Component Documentation Template
 
@@ -61,6 +62,7 @@ Referenced ADRs include **ADR-001** (modular monolith over premature microservic
 
 ## Other Architecture Documents
 
+- **architecture-freeze.md** — the operating contract; the nine frozen decisions and the enforcement table.
 - **high-level-architecture.md** — the three planes, the modular monolith decision, and the connective "No score without evidence" law.
 - **system-context.md** — the system boundary: actors, external systems, and what must never be directly accessed.
 - **container-architecture.md** — the deployable/runnable containers and which are packaged together initially.

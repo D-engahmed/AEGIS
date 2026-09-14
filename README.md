@@ -162,6 +162,9 @@ Key decisions are recorded as ADRs in
 [`docs/architecture/architecture-decision-records/`](docs/architecture/architecture-decision-records)
 (modular monolith ADR-001, Redis queue ADR-002, plugin isolation ADR-004, trace store ADR-005).
 
+The current operating contract — what is frozen and what unfreezing costs —
+is [`docs/architecture/architecture-freeze.md`](docs/architecture/architecture-freeze.md).
+
 ---
 
 ## Repository layout
