@@ -199,15 +199,20 @@ must be edited in three places; nothing enforces parity today.
 12. `../../README.md:30-36` marks phases 0–11 done while deferring OTel,
     object storage, FEXL post-v0.1.
 
-### V6 — CI / test gaps (no behavior change, gates only)
+### V6 — CI / test gaps (status at migration end)
 
-CI (`../../.github/workflows/ci.yml:9-30`) enforces ruff, format, mypy,
-domain purity, docs links, and unit tests (275 passing). It does **not**
-enforce: integration tests (19 exist, self-skip without compose),
-`contract`/`e2e` markers (declared in `pyproject.toml:35-40`, collect 0
-tests), migration-safety checks, OpenAPI parity, security scans, coverage
-floors, or any architecture rule beyond domain purity. Files named
-`test_e2e_*` are marked `unit` and are not end-to-end coverage.
+CI (`.github/workflows/ci.yml`) enforces ruff, format, mypy, domain
+purity, layer boundaries (`scripts/check_layer_boundaries.py`), docs
+validation, unit tests (275 passing), and contract tests (27 passing:
+SDK↔API parity, round-trips, error contract, OpenAPI snapshot). A
+separate `integration` job runs the 19 integration tests against
+Postgres + Redis service containers. The `e2e` marker covers the local
+Playwright dashboard suite (27/27), which stays local-only (browsers +
+desktop harness) and is not a CI job.
+
+Still not enforced: security scans, coverage floors. Files named
+`test_e2e_*` are marked `unit` (in-process FastAPI/HTTP coverage, not
+browser end-to-end) — a naming wart left as-is to avoid churn.
 
 ## 3. Target architecture
 
@@ -300,9 +305,13 @@ Concretely:
    112 files, wired into CI. Contract job added in step 5; new
    `integration` CI job runs `pytest -m integration` against Postgres +
    Redis service containers. E2E stays local-only (browsers + harness).
-9. **Docs triage.** Resolve §V5 contradictions as docs-only commits against
-   the as-built code (routes stay flat; status sections updated). No
-   behavior change rides along with a docs fix.
+9. **Docs triage.** ✅ (step 8, five docs-only commits) All twelve §V5
+   contradictions resolved against the as-built code: flat routes +
+   versioning status recorded in the API docs, `POST /runs → 201`
+   contract corrected (webhooks marked planned), dashboard/storage/
+   evaluator/ gate-evaluation docs aligned, layer cross-cutting
+   language clarified, README status rows corrected. No behavior change
+   rode along with any docs fix. V6 refreshed to the as-built gate set.
 
 Explicitly **not** doing: per-capability `domain/application/api/data`
 resplit, `backend/`-style repo reshuffle, `data/` package rename,
