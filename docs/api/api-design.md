@@ -18,6 +18,12 @@ The API is organized around resources, not RPC-style verbs. URLs name resources 
 
 Versioned entities (Target Versions, Dataset Versions, Evaluator Versions) are nested under their parent resource as `versions`. This keeps the read path explicit about which immutable snapshot is being addressed.
 
+> As-built note: the shipped routes are flat and scoped by the caller's
+> auth context rather than nested URL segments (e.g. `GET /runs`,
+> `GET /catalog/targets/{id}`). The nested shapes above remain the target
+> model for the first versioned (`/v1`) release, introduced through the
+> versioning policy — flat routes are never renamed outside that process.
+
 ## JSON over HTTPS
 
 All requests and responses are JSON (`application/json`) transported over HTTPS. When a client uploads or retrieves large objects in object storage, the API returns signed or pre-authenticated URLs to the object itself; the API response envelope remains JSON.
@@ -153,3 +159,10 @@ The API is organized into the following primary groups. Each group is a top-leve
 | Audit Events | `/organizations/{organization_id}/audit-events` | Append-only mutation records. |
 
 All collections are version-prefixed (`/v1/...`). Collection names are exposed only after an RLS-capable, scope-bound read path exists (see `security-architecture.md`). No endpoint URL is furnished here beyond these collection names; the exact contract is defined by the OpenAPI specs in `openapi/`.
+
+> As-built note: the shipped API exposes flat collections (`/catalog`,
+> `/experiments`, `/runs`, `/analysis`, `/policy`, `/evaluators`,
+> `/evidence`, `/observability`, `/security`, `/health`) with no `/v1`
+> prefix and no tenant nesting. The table above is the target model for
+> the versioned release; the exact shipped contract is the OpenAPI
+> snapshot in `tests/contract/snapshots/openapi.json`.

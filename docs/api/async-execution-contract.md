@@ -4,36 +4,36 @@ This document defines the contract for asynchronous experiment execution, satisf
 
 ## Overview
 
-Running an experiment is long-running work: it can involve thousands of network calls to the target and to evaluators. The API therefore executes experiments asynchronously against a worker pool. The client submits a run, receives a `202 Accepted` with a run identity and status endpoint, and then either polls or subscribes to webhooks for the terminal state.
+Running an experiment is long-running work: it can involve thousands of network calls to the target and to evaluators. The API therefore executes experiments asynchronously against a worker pool. The client submits a run, receives the Run representation, and polls its status for the terminal state.
 
 ## Flow
 
 ### Submit
 
 ```text
-POST /v1/projects/{project_id}/experiments/{experiment_id}/runs
+POST /runs
 
-RequestBody: { ... execution settings, variant selection ... }
+RequestBody: { "experiment_id": "...", "idempotency_key": "..." (optional) }
 ```
 
 - The request is validated before it is queued. An invalid experiment — one whose configuration violates invariants, references missing versions, or is semantically invalid — is rejected with `422 Unprocessable Entity` mapped to `unprocessable` **before any work is queued** (`error-contract.md`).
-- A valid submission returns `202 Accepted` with the Run representation and a `status_url`.
+- A valid submission returns `201 Created` with the Run representation. Replays of the same idempotency key return the original run instead of creating a duplicate.
 - Executions receive globally unique IDs at creation, enforced by a unique constraint, so duplicate or concurrent submissions never create duplicate executions (`write-architecture.md`, `FR-EXE-05`).
 
 ### Status and Polling
 
 ```text
-GET {status_url}
-GET /v1/projects/{project_id}/executions?run_id={run_id}
+GET /runs/{run_id}
+GET /runs/{run_id}/results
 ```
 
-- `GET {status_url}` returns the current Run state.
+- `GET /runs/{run_id}` returns the current Run state.
 - Polling guidance: clients should poll infrequently (for example, exponential backoff up to a documented ceiling) and prefer webhooks where low latency matters. Excessive polling is subject to rate limiting (`api-conventions.md`).
-- The Run representation includes the `status_url` and `next_cursor`-style pagination for the executions list where applicable.
+- Metric results are listed with `GET /runs/{run_id}/results` (optionally filtered by `metric_name`).
 
-### Subscription (Preferred for Long Flows)
+### Subscription (Planned)
 
-Clients that want push delivery subscribe to completion events via webhooks (`webhooks.md`). Webhooks are the preferred delivery mechanism for long async flows; polling is the fallback.
+Push delivery via webhooks is specified in `webhooks.md` but not implemented yet; polling `GET /runs/{run_id}` is the current mechanism. When webhooks ship, clients that want push delivery will subscribe to completion events, with polling as the fallback.
 
 ## Terminal States
 

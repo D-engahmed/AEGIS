@@ -14,6 +14,17 @@ The API is versioned in the URL path:
 - A breaking change requires a new major path version (`/v2/...`), which is introduced alongside the current version during a transition period.
 - The current major version is the only one guaranteed to be stable. Older major versions are retired according to the deprecation lifecycle below.
 
+### As-built status
+
+The routes shipped today are flat and unprefixed (e.g. `POST /runs`,
+`GET /experiments/{experiment_id}`) — no `/v1` prefix is served yet,
+and the dashboard calls the same flat paths. This policy takes effect
+with the first prefixed release: introducing `/v1/...` follows the
+additive rules above, and any later rename follows the breaking-change
+process. Routes are never renamed outside that process. The exact
+shipped contract is the OpenAPI snapshot in
+`tests/contract/snapshots/openapi.json`, enforced by contract tests.
+
 ## Additive vs Breaking Changes
 
 ### Additive Changes (Minor / Compatible)
