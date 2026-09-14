@@ -114,6 +114,15 @@ evaluators (which carry no probabilistic judge risk). Deterministic evaluators a
 first candidates for a relaxation, but the isolation boundary must be retained for
 LLM-judge and other risk-bearing evaluator categories.
 
+## Implementation Note (2026-09)
+
+The shipped evaluators are deterministic-only and run as an in-process
+plugin registry (`evaluation/plugins.py`, `evaluation/trajectory.py`) —
+the relaxation this section anticipates for the deterministic category.
+The decision above stands unchanged: the RPC/process boundary must be
+introduced with the first LLM-judge or other risk-bearing evaluator. No
+third-party evaluator adapters (DeepEval, Ragas) are integrated yet.
+
 ## Linked Documents
 
 - grilling.md Q36-Q50 (plugin metrics, evaluator identity and provenance), Q68-Q70

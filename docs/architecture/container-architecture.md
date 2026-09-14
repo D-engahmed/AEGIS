@@ -37,10 +37,15 @@ flowchart LR
     EVALW --> PG
 
     TRACE --> PG
-    PG --> ANALYSIS[Analysis / Gates<br/>in API process]
+    PG --> ANALYSIS[Analysis / Gate reports<br/>served by API]
 ```
 
 The Execution Plane (execution workers and evaluation workers, plus the queue and target adapters) is packaged separately from the Control Plane (Web/API). The web dashboard, if present, is a separate deployable that talks only to the API.
+
+Gate evaluation runs inside the execution engine (in worker processes, or
+in-process for CLI-driven evaluations) over persisted results; the API
+process never evaluates gates itself — it serves the persisted gate
+reports and records authorized overrides (`routers/policy.py`).
 
 ## Container Details
 
@@ -79,6 +84,7 @@ The Execution Plane (execution workers and evaluation workers, plus the queue an
 - **How It Scales**: Scales in capacity independently; content-addressed for deduplication.
 - **Failure Behavior**: Outage limits artifact/trace access but metadata remains queryable.
 - **Layer(s) Implemented**: Evidence Plane persistence.
+- **As-built status**: Deferred post-v0.1. Evidence artifacts are kept in-process (content-hashed) until an object-storage adapter ships.
 
 ### Trace Store
 - **Responsibility**: Stores OpenTelemetry-compatible execution traces of model calls, retrieval, tools, memory, and agent execution.
@@ -86,10 +92,11 @@ The Execution Plane (execution workers and evaluation workers, plus the queue an
 - **How It Scales**: Scales with execution volume; evaluation traces are normally unsampled.
 - **Failure Behavior**: Storage loss or privacy leakage are the main risks; redaction is applied before storage.
 - **Layer(s) Implemented**: Evidence Plane.
+- **As-built status**: Deferred post-v0.1. Evaluation traces are preserved in-process (never sampled); the OTel collector/backend has not been adopted.
 
 ### Web Dashboard/UI
 - **Responsibility**: A browser interface over the API for engineers to view results, evidence, traces, and reports.
-- **Primary Technology**: A separate frontend (e.g., Next.js) that talks only to the API.
+- **Primary Technology**: The shipped static `frontend/` deployable (HTML/CSS/JS) that talks only to the API over HTTP.
 - **How It Scales**: Scales as a static/edge-served frontend.
 - **Failure Behavior**: If unavailable, the API and evaluation continue to operate; the UI never has direct database access.
 - **Layer(s) Implemented**: Interface over the Control Plane.

@@ -96,6 +96,13 @@ self-hosting the trace store changes materially. The decision may be revised to 
 managed OpenTelemetry backend while preserving the semantics and the "no sampling of
 evaluation evidence" guarantee.
 
+## Implementation Note (2026-09)
+
+The dedicated trace store, object storage, and OTel collector/backend are
+deferred post-v0.1. As built, evaluation traces are preserved in-process
+(never sampled) and evidence artifacts are kept content-hashed in-process.
+The decision above stands unchanged; this note records sequencing only.
+
 ## Linked Documents
 
 - grilling.md Q453-Q475 (trace model, OpenTelemetry preference, sampling, privacy)

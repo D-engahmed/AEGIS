@@ -62,7 +62,7 @@ Execution results (traces, tool call records, target responses), execution statu
 
 Execution is a runtime concern, not a business logic concern. It manages how work is scheduled, run, and monitored, not what the work means. Separating it from the application layer prevents runtime concerns (timeouts, retries, sandboxing) from contaminating business workflows.
 
-It is not a standalone microservice because ADR-001 establishes that AEGIS starts as a modular monolith. The execution layer runs as worker processes within the same deployment boundary. It can be extracted to a separate service later if scaling demands require it.
+It is not a standalone microservice because ADR-001 establishes that AEGIS starts as a modular monolith. The execution layer runs as worker processes within the same codebase and deployment: separately runnable and scalable processes (including the compose `aegis` worker service) for untrusted-target isolation — not independently deployed microservices. A module is extracted to a separate service later only if scaling demands require it.
 
 ## 11. Alternatives Considered
 
