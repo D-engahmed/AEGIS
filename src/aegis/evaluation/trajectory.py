@@ -1,15 +1,13 @@
 """Trajectory evaluators: evidence-backed scores over agent/RAG traces.
 
-Phase 3 evaluation depth (implementation-order.md): tool selection, recovery
-from errors, and step-budget adherence are scored from the execution's preserved
-trace. Every result still requires evidence (evidence-architecture.md); an
-evaluator that cannot see a trace for the execution produces no result rather
-than a fabricated score.
+The trajectory layer evaluates agent behaviour rather than only final output.
+All evaluators are deterministic, versioned, and require an evidence reference.
 """
 
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -87,62 +85,79 @@ def tool_calls_from(spans: Iterable[Any]) -> list[ToolCall]:
 
 
 def step_count(spans: Iterable[Any]) -> int:
-    """Agent step count: explicit step index when present, else tool-call count."""
+    """Agent step count using explicit zero-based indices when available."""
+    span_list = list(spans)
     explicit = [
         int(span.attributes[AgentSpanAttributes.STEP_INDEX])
-        for span in spans
+        for span in span_list
         if AgentSpanAttributes.STEP_INDEX in (getattr(span, "attributes", {}) or {})
     ]
     if explicit:
+        if min(explicit) < 0:
+            raise ValueError("agent step index must be non-negative")
         return max(explicit) + 1
-    calls = tool_calls_from(spans)
-    return len(calls) if calls else 0
+    calls = tool_calls_from(span_list)
+    return len(calls)
+
+
+def _metric(
+    clock: Clock,
+    execution: ExecutionRecord,
+    test_case: TestCase,
+    evidence: EvidenceReference,
+    *,
+    metric_name: str,
+    score: float,
+    identity: str,
+    version: str,
+    raw_value: object,
+    reason: str,
+    unit: str | None = "fraction",
+) -> MetricResult:
+    return new_metric_result(
+        clock,
+        run_id=execution.run_id,
+        execution_id=execution.id,
+        test_case_id=test_case.id,
+        metric_name=metric_name,
+        score=max(0.0, min(1.0, score)),
+        evaluator_identity=identity,
+        evaluator_version=version,
+        evidence=(evidence,),
+        raw_value=raw_value,
+        unit=unit,
+        reason=reason,
+    )
 
 
 class StepBudgetEvaluator(TrajectoryEvaluator):
-    """Adherence to an agent step budget; below budget scores linearly worse."""
+    """Score adherence to an agent step budget."""
 
     identity = "aegis/trajectory/step_budget"
-    version = "1.0.0"
+    version = "1.1.0"
     display_name = "Step Budget"
     metrics = ("step_budget",)
     unit = "fraction"
 
-    def evaluate_trajectory(
-        self,
-        clock: Clock,
-        execution: ExecutionRecord,
-        test_case: TestCase,
-        evidence: EvidenceReference,
-        spans: Iterable[Any],
-    ) -> list[MetricResult]:
+    def evaluate_trajectory(self, clock, execution, test_case, evidence, spans):
         budget = float(test_case.metadata.get("step_budget") or 10.0)
+        if budget <= 0:
+            raise ValueError("step_budget must be greater than zero")
         steps = step_count(spans)
         score = min(1.0, budget / steps) if steps else 1.0
         return [
-            new_metric_result(
-                clock,
-                run_id=execution.run_id,
-                execution_id=execution.id,
-                test_case_id=test_case.id,
-                metric_name="step_budget",
-                score=score,
-                evaluator_identity=self.identity,
-                evaluator_version=self.version,
-                evidence=(evidence,),
-                raw_value=steps,
-                unit=self.unit,
-                reason=(
-                    f"{steps} steps within {int(budget)} budget"
-                    if steps <= budget
-                    else f"{steps} steps over {int(budget)} budget"
-                ),
+            _metric(
+                clock, execution, test_case, evidence,
+                metric_name="step_budget", score=score, identity=self.identity,
+                version=self.version, raw_value=steps,
+                reason=(f"{steps} steps within {int(budget)} budget"
+                         if steps <= budget else f"{steps} steps over {int(budget)} budget"),
             )
         ]
 
 
 class ToolSelectionEvaluator(TrajectoryEvaluator):
-    """Whether the expected tool (or one of several) was invoked in the trace."""
+    """Score whether at least one expected tool was selected."""
 
     identity = "aegis/trajectory/tool_selection"
     version = "1.0.0"
@@ -150,50 +165,29 @@ class ToolSelectionEvaluator(TrajectoryEvaluator):
     metrics = ("tool_selection",)
     unit = "fraction"
 
-    def evaluate_trajectory(
-        self,
-        clock: Clock,
-        execution: ExecutionRecord,
-        test_case: TestCase,
-        evidence: EvidenceReference,
-        spans: Iterable[Any],
-    ) -> list[MetricResult]:
+    def evaluate_trajectory(self, clock, execution, test_case, evidence, spans):
         expected = test_case.metadata.get("expected_tool")
         if expected is None:
             raise ValueError("tool_selection evaluator requires test case metadata 'expected_tool'")
-        expectations = {expected} if isinstance(expected, str) else set(expected)
+        expectations = {expected} if isinstance(expected, str) else {str(v) for v in expected}
+        if not expectations:
+            raise ValueError("expected_tool must contain at least one tool")
         used = {call.name for call in tool_calls_from(spans)}
-        hit = next((name for name in expectations if name in used), None)
-        score = 1.0 if hit is not None else 0.0
+        hit = next((name for name in sorted(expectations) if name in used), None)
         return [
-            new_metric_result(
-                clock,
-                run_id=execution.run_id,
-                execution_id=execution.id,
-                test_case_id=test_case.id,
-                metric_name="tool_selection",
-                score=score,
-                evaluator_identity=self.identity,
-                evaluator_version=self.version,
-                evidence=(evidence,),
-                raw_value=1.0 if hit is not None else 0.0,
-                unit=self.unit,
-                reason=(
-                    f"invoked expected tool {hit!r}"
-                    if hit is not None
-                    else f"expected tool {sorted(expectations)[0]!r} not invoked"
-                ),
+            _metric(
+                clock, execution, test_case, evidence,
+                metric_name="tool_selection", score=1.0 if hit else 0.0,
+                identity=self.identity, version=self.version,
+                raw_value=1.0 if hit else 0.0,
+                reason=(f"invoked expected tool {hit!r}" if hit
+                         else f"expected tool {sorted(expectations)[0]!r} not invoked"),
             )
         ]
 
 
 class RecoveryEvaluator(TrajectoryEvaluator):
-    """Whether the agent recovered from a failed tool call in the same trace.
-
-    Failing is allowed when the very next invocation of the same tool succeeds;
-    an error that is never followed by a successful retry scores zero. A trace
-    with no tool calls cannot be assessed and yields no result.
-    """
+    """Score whether failed tool calls are eventually recovered."""
 
     identity = "aegis/trajectory/recovery"
     version = "1.0.0"
@@ -201,57 +195,115 @@ class RecoveryEvaluator(TrajectoryEvaluator):
     metrics = ("recovery",)
     unit = "fraction"
 
-    def evaluate_trajectory(
-        self,
-        clock: Clock,
-        execution: ExecutionRecord,
-        test_case: TestCase,
-        evidence: EvidenceReference,
-        spans: Iterable[Any],
-    ) -> list[MetricResult]:
+    def evaluate_trajectory(self, clock, execution, test_case, evidence, spans):
         calls = tool_calls_from(spans)
         if not calls:
             return []
-        seen_failure = False
-        recovered = True
-        for index, call in enumerate(calls):
-            if not call.ok():
-                seen_failure = True
-                retried = any(
-                    later.ok() and later.name == call.name for later in calls[index + 1 :]
-                )
-                if not retried:
-                    recovered = False
-                    break
-        if not seen_failure:
-            reason = "no tool errors observed"
-            score = 1.0
-        elif recovered:
-            reason = "failed tool call recovered by a successful retry"
-            score = 1.0
+        failures = [i for i, call in enumerate(calls) if call.error]
+        if not failures:
+            score, reason = 1.0, "no tool errors observed"
         else:
-            reason = "tool error never recovered"
-            score = 0.0
-        return [
-            new_metric_result(
-                clock,
-                run_id=execution.run_id,
-                execution_id=execution.id,
-                test_case_id=test_case.id,
-                metric_name="recovery",
-                score=score,
-                evaluator_identity=self.identity,
-                evaluator_version=self.version,
-                evidence=(evidence,),
-                raw_value=1.0 if recovered or not seen_failure else 0.0,
-                unit=self.unit,
-                reason=reason,
+            recovered = sum(
+                any(later.ok() and later.name == calls[i].name for later in calls[i + 1:])
+                for i in failures
             )
-        ]
+            score = recovered / len(failures)
+            reason = f"recovered {recovered}/{len(failures)} failed tool calls"
+        return [_metric(clock, execution, test_case, evidence,
+                        metric_name="recovery", score=score, identity=self.identity,
+                        version=self.version, raw_value=score, reason=reason)]
+
+
+class ToolPrecisionEvaluator(TrajectoryEvaluator):
+    """Measure unnecessary tool calls against an allowed tool set."""
+
+    identity = "aegis/trajectory/tool_precision"
+    version = "1.0.0"
+    display_name = "Tool Precision"
+    metrics = ("tool_precision",)
+    unit = "fraction"
+
+    def evaluate_trajectory(self, clock, execution, test_case, evidence, spans):
+        allowed = test_case.metadata.get("allowed_tools")
+        if allowed is None:
+            raise ValueError("tool_precision evaluator requires 'allowed_tools'")
+        allowed_set = {allowed} if isinstance(allowed, str) else {str(v) for v in allowed}
+        calls = tool_calls_from(spans)
+        if not calls:
+            return [_metric(clock, execution, test_case, evidence,
+                            metric_name="tool_precision", score=1.0,
+                            identity=self.identity, version=self.version,
+                            raw_value=1.0, reason="no tool calls observed")]
+        valid = sum(call.name in allowed_set for call in calls)
+        score = valid / len(calls)
+        return [_metric(clock, execution, test_case, evidence,
+                        metric_name="tool_precision", score=score,
+                        identity=self.identity, version=self.version,
+                        raw_value=score,
+                        reason=f"{valid}/{len(calls)} tool calls were allowed")]
+
+
+class ToolRecallEvaluator(TrajectoryEvaluator):
+    """Measure whether all required tools were invoked at least once."""
+
+    identity = "aegis/trajectory/tool_recall"
+    version = "1.0.0"
+    display_name = "Tool Recall"
+    metrics = ("tool_recall",)
+    unit = "fraction"
+
+    def evaluate_trajectory(self, clock, execution, test_case, evidence, spans):
+        required = test_case.metadata.get("required_tools")
+        if required is None:
+            raise ValueError("tool_recall evaluator requires 'required_tools'")
+        required_set = {required} if isinstance(required, str) else {str(v) for v in required}
+        if not required_set:
+            raise ValueError("required_tools must contain at least one tool")
+        used = {call.name for call in tool_calls_from(spans)}
+        hits = len(required_set & used)
+        score = hits / len(required_set)
+        return [_metric(clock, execution, test_case, evidence,
+                        metric_name="tool_recall", score=score,
+                        identity=self.identity, version=self.version,
+                        raw_value=score,
+                        reason=f"invoked {hits}/{len(required_set)} required tools")]
+
+
+class LoopDetectionEvaluator(TrajectoryEvaluator):
+    """Penalize repeated tool-call sequences that indicate agent loops."""
+
+    identity = "aegis/trajectory/loop_detection"
+    version = "1.0.0"
+    display_name = "Loop Detection"
+    metrics = ("loop_detection",)
+    unit = "fraction"
+
+    def evaluate_trajectory(self, clock, execution, test_case, evidence, spans):
+        calls = tool_calls_from(spans)
+        threshold = int(test_case.metadata.get("loop_threshold") or 3)
+        if threshold < 2:
+            raise ValueError("loop_threshold must be at least 2")
+        counts = Counter(call.name for call in calls)
+        offenders = sorted(name for name, count in counts.items() if count >= threshold)
+        score = 0.0 if offenders else 1.0
+        reason = (f"repeated tool calls detected: {', '.join(offenders)}"
+                  if offenders else "no repeated-tool loop detected")
+        return [_metric(clock, execution, test_case, evidence,
+                        metric_name="loop_detection", score=score,
+                        identity=self.identity, version=self.version,
+                        raw_value=offenders, reason=reason)]
 
 
 _TRAJECTORY_REGISTRY: dict[str, TrajectoryEvaluator] = {
-    e.identity: e for e in (StepBudgetEvaluator(), ToolSelectionEvaluator(), RecoveryEvaluator())
+    e.identity: e
+    for e in (
+        StepBudgetEvaluator(),
+        ToolSelectionEvaluator(),
+        RecoveryEvaluator(),
+        ToolPrecisionEvaluator(),
+        ToolRecallEvaluator(),
+        LoopDetectionEvaluator(),
+    )
 }
 
 _TRAJECTORY_IDENTITIES = set(_TRAJECTORY_REGISTRY)
@@ -276,7 +328,7 @@ def _as_json(value: object) -> str | None:
         return None
     if isinstance(value, str):
         return value
-    return json.dumps(value)
+    return json.dumps(value, sort_keys=True)
 
 
 def _truthy(value: object) -> bool:
@@ -287,9 +339,12 @@ def _truthy(value: object) -> bool:
 
 __all__ = [
     "AgentSpanAttributes",
+    "LoopDetectionEvaluator",
     "RecoveryEvaluator",
     "StepBudgetEvaluator",
     "ToolCall",
+    "ToolPrecisionEvaluator",
+    "ToolRecallEvaluator",
     "ToolSelectionEvaluator",
     "TrajectoryEvaluator",
     "get_trajectory_evaluator",
