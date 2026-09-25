@@ -18,6 +18,7 @@ from typing import Any
 
 import psycopg
 
+from aegis.application.run_tracing import TracePayload, TraceSpanPayload, TraceStore
 from aegis.application.ports import (
     CancellationRegistry,
     DataCatalog,
@@ -753,6 +754,95 @@ def _dataset_version_from(row, test_rows) -> DatasetVersion:
     )
 
 
+class PostgresTraceStore(TraceStore):
+    """Persistent PostgreSQL store for immutable evaluation traces."""
+
+    def __init__(self, db: Psql) -> None:
+        self._db = db
+
+    def persist(self, trace: TracePayload) -> None:
+        spans = [
+            {
+                "span_id": span.span_id,
+                "name": span.name,
+                "trace_id": span.trace_id,
+                "parent_span_id": span.parent_span_id,
+                "start_time": span.start_time,
+                "end_time": span.end_time,
+                "status": span.status,
+                "attributes": span.attributes,
+            }
+            for span in trace.spans
+        ]
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO evaluation_traces
+                    (trace_id, run_id, execution_id, preserved_at, spans)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (trace_id) DO NOTHING
+                """,
+                (
+                    trace.trace_id,
+                    trace.run_id,
+                    trace.execution_id,
+                    trace.preserved_at,
+                    json_dumps(to_plain(spans)),
+                ),
+            )
+            if cur.rowcount == 0:
+                raise Conflict(f"trace {trace.trace_id!r} already persisted")
+
+    def list_for_run(self, run_id: str) -> list[TracePayload]:
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT trace_id, run_id, execution_id, preserved_at, spans
+                FROM evaluation_traces
+                WHERE run_id = %s
+                ORDER BY preserved_at, trace_id
+                """,
+                (run_id,),
+            )
+            return [_trace_payload_from_row(row) for row in cur.fetchall()]
+
+    def list_for_execution(self, execution_id: str) -> list[TracePayload]:
+        with self._db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT trace_id, run_id, execution_id, preserved_at, spans
+                FROM evaluation_traces
+                WHERE execution_id = %s
+                ORDER BY preserved_at, trace_id
+                """,
+                (execution_id,),
+            )
+            return [_trace_payload_from_row(row) for row in cur.fetchall()]
+
+
+def _trace_payload_from_row(row) -> TracePayload:
+    raw_spans = from_plain(row[4])
+    return TracePayload(
+        trace_id=row[0],
+        run_id=row[1],
+        execution_id=row[2],
+        preserved_at=row[3],
+        spans=tuple(
+            TraceSpanPayload(
+                span_id=span["span_id"],
+                name=span["name"],
+                trace_id=span["trace_id"],
+                parent_span_id=span.get("parent_span_id"),
+                start_time=span["start_time"],
+                end_time=span["end_time"],
+                status=span["status"],
+                attributes=dict(span.get("attributes") or {}),
+            )
+            for span in raw_spans
+        ),
+    )
+
+
 class PostgresCancellationRegistry(CancellationRegistry):
     def __init__(self, db: Psql) -> None:
         self._db = db
@@ -1052,6 +1142,7 @@ class PostgresStore:
         self.results = PostgresResultRepository(self.db)
         self.catalog = PostgresDataCatalog(self.db)
         self.cancellations = PostgresCancellationRegistry(self.db)
+        self.traces = PostgresTraceStore(self.db)
         self.evidence = PostgresEvidenceRepository(self.db)
         self.provenance = PostgresProvenanceIndex(self.db)
         self.artifacts = PostgresArtifactManager(self.db)
