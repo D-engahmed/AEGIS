@@ -155,6 +155,8 @@ def test_run_scoped_reads_reject_foreign_tenant(api) -> None:
             [("baseline_run_id", run_id), ("current_run_id", run_id)],
         ),
         ("/analysis/failures", "GET", "/analysis/failures", [("run_ids", run_id)]),
+        ("/observability/cost", "GET", f"/observability/cost/{run_id}", None),
+        ("/observability/traces", "GET", f"/observability/traces/{run_id}", None),
     ]
     for _name, method, url, params in cases:
         params = params or {}
