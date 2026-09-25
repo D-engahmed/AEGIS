@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 
+from aegis.application.run_tracing import TracePayload, TraceSpanPayload, TraceStore
+
 from .models import SpanAttributes, SpanData, TraceRecord
 
 
@@ -15,8 +17,13 @@ class TracePreservationEngine:
     Production operational spans may be sampled normally; evaluation spans never are.
     """
 
-    def __init__(self, preserve: dict[str, TraceRecord] | None = None) -> None:
+    def __init__(
+        self,
+        preserve: dict[str, TraceRecord] | None = None,
+        store: TraceStore | None = None,
+    ) -> None:
         self._preserved: dict[str, TraceRecord] = preserve if preserve is not None else {}
+        self._store = store
 
     @staticmethod
     def is_evaluation_span(span: SpanData) -> bool:
@@ -49,15 +56,70 @@ class TracePreservationEngine:
             preserved_at=datetime.now(UTC),
         )
         self._preserved[trace_id] = record
+        if self._store is not None:
+            self._store.persist(_payload_from_record(record))
         return record
 
     def traces_for_run(self, run_id: str) -> list[TraceRecord]:
+        if self._store is not None:
+            return [_record_from_payload(payload) for payload in self._store.list_for_run(run_id)]
         return [record for record in self._preserved.values() if record.run_id == run_id]
 
     def traces_for_execution(self, execution_id: str) -> list[TraceRecord]:
+        if self._store is not None:
+            return [
+                _record_from_payload(payload)
+                for payload in self._store.list_for_execution(execution_id)
+            ]
         return [
             record for record in self._preserved.values() if record.execution_id == execution_id
         ]
+
+
+def _payload_from_record(record: TraceRecord) -> TracePayload:
+    return TracePayload(
+        trace_id=record.trace_id,
+        run_id=record.run_id,
+        execution_id=record.execution_id,
+        preserved_at=record.preserved_at,
+        spans=tuple(
+            TraceSpanPayload(
+                span_id=span.span_id,
+                name=span.name,
+                trace_id=span.trace_id,
+                parent_span_id=span.parent_span_id,
+                start_time=span.start_time,
+                end_time=span.end_time,
+                status=span.status.value,
+                attributes=dict(span.attributes),
+            )
+            for span in record.spans
+        ),
+    )
+
+
+def _record_from_payload(payload: TracePayload) -> TraceRecord:
+    from .models import SpanStatusCode
+
+    return TraceRecord(
+        trace_id=payload.trace_id,
+        run_id=payload.run_id,
+        execution_id=payload.execution_id,
+        preserved_at=payload.preserved_at,
+        spans=tuple(
+            SpanData(
+                span_id=span.span_id,
+                name=span.name,
+                trace_id=span.trace_id,
+                parent_span_id=span.parent_span_id,
+                start_time=span.start_time,
+                end_time=span.end_time,
+                status=SpanStatusCode(span.status),
+                attributes=dict(span.attributes),
+            )
+            for span in payload.spans
+        ),
+    )
 
 
 def _sample(trace_id: str, sample_rate: float) -> bool:
