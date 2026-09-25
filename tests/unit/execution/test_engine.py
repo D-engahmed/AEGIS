@@ -266,6 +266,46 @@ def test_fingerprint_is_stable() -> None:
     assert fingerprint({"q": "hello"}) != fingerprint({"q": "goodbye"})
 
 
+def test_engine_fails_when_trace_persistence_fails(
+    clock,
+    make_run,
+    make_dataset_version,
+    make_target_version,
+    make_harness,
+) -> None:
+    from aegis.execution.engine import ExecutionEngine
+    from aegis.observability.run_tracing import RecordingRunTracer
+
+    tracer = RecordingRunTracer()
+
+    class _Provider:
+        def get_tracer(self, name):
+            return tracer
+
+    def fail_flush(_run_id: str) -> str | None:
+        raise RuntimeError("trace store unavailable")
+
+    tracer.flush = fail_flush
+
+    dataset = make_dataset_version(("hi", "hello"))
+    target_version = make_target_version()
+    run = make_run(target_version_id=target_version.id, dataset_version_id=dataset.id)
+    harness = make_harness(
+        run=run,
+        target_version=target_version,
+        dataset_version=dataset,
+        target=ScriptedTarget("hello"),
+        tracer_provider=_Provider(),
+    )
+
+    result = harness.engine.run(run.id)
+
+    assert result.status is RunStatus.FAILED
+    assert result.error is not None
+    assert result.error.code is FailureCode.INFRASTRUCTURE
+    assert harness.runs.load(run.id).status is RunStatus.FAILED
+
+
 def test_engine_records_spans_per_execution(
     clock,
     make_run,
