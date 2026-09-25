@@ -25,6 +25,7 @@ from aegis.domain.execution import (
 from aegis.domain.experiments import ExperimentSnapshot, create_experiment
 from aegis.domain.results import EvidenceReference, new_metric_result
 from aegis.domain.targets import TargetType, create_target, create_target_version
+from aegis.application.run_tracing import TracePayload, TraceSpanPayload
 from aegis.domain.time import FrozenClock
 from aegis.evidence.models import (
     ArtifactReference,
@@ -63,6 +64,33 @@ def catalog_versions(clock: FrozenClock):
     )
     dataset_version, _ = lock_dataset_version(clock, dataset_version)
     return target_version, dataset_version
+
+
+def test_trace_store_is_write_once_and_roundtrips(store: PostgresStore, clock: FrozenClock) -> None:
+    trace = TracePayload(
+        trace_id="trace:postgres",
+        run_id="run:postgres",
+        execution_id="exe:postgres",
+        preserved_at=clock.now(),
+        spans=(
+            TraceSpanPayload(
+                span_id="span:postgres",
+                name="target.invoke",
+                trace_id="trace:postgres",
+                parent_span_id=None,
+                start_time=clock.now(),
+                end_time=clock.now(),
+                status="ok",
+                attributes={"a": 1, "tags": ["qa", "trace"]},
+            ),
+        ),
+    )
+    store.traces.persist(trace)
+    assert store.traces.list_for_run(trace.run_id) == [trace]
+    assert store.traces.list_for_execution(trace.execution_id) == [trace]
+
+    with pytest.raises(Conflict):
+        store.traces.persist(trace)
 
 
 def test_target_and_dataset_versions_roundtrip(
