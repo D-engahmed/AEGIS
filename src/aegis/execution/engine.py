@@ -137,6 +137,7 @@ class ExecutionEngine:
         tracer = noop_tracer()
         if self._tracer_provider is not None:
             tracer = self._tracer_provider.get_tracer(f"run/{run.id}")
+        evaluation_trace_id = getattr(tracer, "trace_id", None)
 
         for sequence, test_case in enumerate(dataset.test_cases):
             if self._cancellations.is_cancelled(run.id):
@@ -194,8 +195,11 @@ class ExecutionEngine:
 
             outcome = _as_outcome(result)
             execution = replace(execution, retries=used_retries)
-            trace_id = outcome.trace_artifact_id or f"trace/{execution.id}"
+            trace_id = evaluation_trace_id or outcome.trace_artifact_id or f"trace/{execution.id}"
+            if outcome.trace_artifact_id and outcome.trace_artifact_id != trace_id:
+                span.set_attribute("aegis.target.trace_artifact.id", outcome.trace_artifact_id)
             outcome = replace(outcome, trace_artifact_id=trace_id)
+            span.set_attribute("aegis.trace.id", trace_id)
             span.set_attribute(MetricDefinitions.TARGET_COST_USD, outcome.cost_usd)
             span.set_attribute(SpanAttributes.LATENCY_MS, outcome.latency_ms)
             span.set_attribute("aegis.trace.artifact.id", trace_id)
@@ -244,12 +248,26 @@ class ExecutionEngine:
         else:
             run = run.fail(fatal, summary, self._clock.now())
         run = replace(run, executions=tuple(ex.id for ex in completed))
+
+        if tracer is not noop_tracer():
+            try:
+                tracer.flush(run.id)
+            except Exception:
+                if run.status is RunStatus.SUCCEEDED:
+                    run = run.fail(
+                        FailureInfo(
+                            FailureCode.INFRASTRUCTURE,
+                            "failed to durably persist evaluation trace",
+                            self._clock.now(),
+                        ),
+                        summary,
+                        self._clock.now(),
+                    )
+
         self._runs.save(run)
         self._reconcile_experiment(run.experiment_id)
 
-        if tracer is not noop_tracer():
-            tracer.flush(run.id)
-        if completed:
+        if completed and run.status is not RunStatus.FAILED:
             trajectory_metrics = self._gateway.evaluate_trajectory(
                 run, completed, dataset.test_cases
             )

@@ -1,6 +1,14 @@
 # AEGIS Product Roadmap
 
-Status: **active**. Phase 0 (architecture freeze) is complete. This document
+Status: **active**. Phase 0 (architecture freeze) and Phase 1 run-ownership enforcement are complete.
+
+Current execution: **Phase 2 — Real tracing**.
+PR-02 is the durable-tracing increment: PostgreSQL-backed preserved traces, restart-proof trace reads,
+run-scoped authorization on trace/cost endpoints, and alignment between score evidence and the persisted
+AEGIS trace identifier. The phase remains open until trace ingestion, retrieval, metadata, and failure
+semantics are fully proven.
+
+This document
 defines the product phases through production beta.
 
 `docs/architecture/architecture-freeze.md` pins the nine architectural

@@ -154,7 +154,14 @@ def test_persistent_run_survives_restart(context, clock) -> None:
     persisted_results = restarted.results.list_for_run(run_view.run_id)
     assert len(persisted_results) == 2
     assert {r.score for r in persisted_results} == {1.0}
-    assert len(restarted.evidence_repository.list_for_run(run_view.run_id)) == 2
+    persisted_evidence = restarted.evidence_repository.list_for_run(run_view.run_id)
+    assert len(persisted_evidence) == 2
+    traces = restarted.preservation.traces_for_run(run_view.run_id)
+    assert len(traces) == 1
+    assert len(traces[0].spans) == 2
+    assert {ref.trace_artifact_id for r in persisted_results for ref in r.evidence} == {
+        traces[0].trace_id
+    }
 
 
 def test_submit_is_idempotent_across_restart(context, clock) -> None:

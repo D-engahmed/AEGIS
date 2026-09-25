@@ -230,6 +230,29 @@ def _dedupe_constraint() -> str:
 _MIGRATIONS: list[tuple[int, str, list[str]]] = [
     (1, "initial aegis schema", _ddl()),
     (2, "unique evidence per metric result (write-once, replays)", [_dedupe_constraint()]),
+    (
+        3,
+        "durable evaluation trace records",
+        [
+            """
+            CREATE TABLE IF NOT EXISTS evaluation_traces (
+                trace_id text PRIMARY KEY,
+                run_id text NOT NULL,
+                execution_id text,
+                preserved_at timestamptz NOT NULL,
+                spans jsonb NOT NULL
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS ix_evaluation_traces_run
+                ON evaluation_traces (run_id, preserved_at, trace_id)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS ix_evaluation_traces_execution
+                ON evaluation_traces (execution_id, preserved_at, trace_id)
+            """,
+        ],
+    ),
 ]
 
 

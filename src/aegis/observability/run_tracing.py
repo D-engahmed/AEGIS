@@ -44,6 +44,10 @@ class EvaluationRunTracer(RunTracer):
         self._tracer = tracer
         self._execution: str | None = None
 
+    @property
+    def trace_id(self) -> str:
+        return self._tracer.trace_id
+
     def start_span(self, name: str, **attributes: object) -> RunSpan:
         aliases = {
             "run_id": SpanAttributes.RUN_ID,
@@ -110,6 +114,10 @@ class _InMemoryRunSpan:
 class _NoopRunTracer(RunTracer):
     """Does nothing; the engine strips spans without a configured provider."""
 
+    @property
+    def trace_id(self) -> str | None:
+        return None
+
     def start_span(self, name: str, **attributes: object) -> RunSpan:
         return _InMemoryRunSpan(name, "", "")
 
@@ -136,6 +144,10 @@ class _UnitRunSpan(RunSpan):
 
 class RecordingRunTracer(RunTracer):
     """A scripted tracer for tests: records spans and flushes nothing."""
+
+    @property
+    def trace_id(self) -> str | None:
+        return None
 
     def __init__(self) -> None:
         self.spans: list[_UnitRunSpan] = []
