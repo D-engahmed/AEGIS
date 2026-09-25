@@ -138,7 +138,6 @@ The intended merge gates are documented in docs/ci-cd/pull-request-gates.md and 
 CURRENT PR: PR-02 — https://github.com/D-engahmed/AEGIS/pull/2
 BRANCH: feat/phase-2-trace-persistence
 BASE COMMIT: 654364e838d55af5014252ed86cff9d862fdf0fe
-CURRENT HEAD: 5c8f2c3f3a5de1f6bfe4f0d8b0e4e1f7f9c3c4d5
 WHAT CHANGED: durable trace store contract, PostgreSQL trace persistence, memory trace adapter, storage-backed preservation, trace-id alignment in execution evidence, run-scoped observability authorization, schema migration, focused/integration tests, roadmap state
 WHAT WAS VERIFIED: source-level review, Ruff line-length scan, layer-boundary review, PR creation, and branch comparison
 WHAT FAILED: GitHub Actions has not reported a workflow run/status for the branch; this GitHub session has no local runtime for pytest/ruff/mypy
