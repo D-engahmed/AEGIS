@@ -35,6 +35,7 @@ from aegis.domain import (
 from aegis.domain.cancellation import CancellationToken
 from aegis.domain.identifiers import new_id
 from aegis.domain.time import Clock
+from aegis.application.run_tracing import TracePayload, TraceStore
 from aegis.evidence.models import (
     ArtifactReference,
     ArtifactType,
@@ -44,6 +45,30 @@ from aegis.evidence.models import (
 from aegis.evidence.ports import ArtifactManager, EvidenceRepository, ProvenanceQuery
 from aegis.policy.models import RunGateReport
 from aegis.policy.ports import RunGateStore
+
+
+class MemoryTraceStore(TraceStore):
+    """In-memory durable-trace stand-in used by unit tests and local development."""
+
+    def __init__(self) -> None:
+        self._items: dict[str, TracePayload] = {}
+
+    def persist(self, trace: TracePayload) -> None:
+        if trace.trace_id in self._items:
+            raise Conflict(f"trace {trace.trace_id!r} already persisted")
+        self._items[trace.trace_id] = trace
+
+    def list_for_run(self, run_id: str) -> list[TracePayload]:
+        return sorted(
+            (trace for trace in self._items.values() if trace.run_id == run_id),
+            key=lambda trace: (trace.preserved_at, trace.trace_id),
+        )
+
+    def list_for_execution(self, execution_id: str) -> list[TracePayload]:
+        return sorted(
+            (trace for trace in self._items.values() if trace.execution_id == execution_id),
+            key=lambda trace: (trace.preserved_at, trace.trace_id),
+        )
 
 
 class MemoryExperimentRepository(ExperimentRepository):
@@ -368,5 +393,6 @@ __all__ = [
     "MemoryQueue",
     "MemoryResultRepository",
     "MemoryRunGateStore",
+    "MemoryTraceStore",
     "MemoryRunRepository",
 ]
