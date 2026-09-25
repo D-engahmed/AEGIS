@@ -25,6 +25,7 @@ from aegis.application.ports import (
     RunRepository,
 )
 from aegis.application.run_gates import RunGateService
+from aegis.application.run_tracing import TraceStore
 from aegis.application.runner import EvaluationRunner
 from aegis.application.services import ExperimentService, RunService
 from aegis.domain.time import Clock, SystemClock
@@ -41,6 +42,7 @@ from aegis.infrastructure.memory import (
     MemoryResultRepository,
     MemoryRunGateStore,
     MemoryRunRepository,
+    MemoryTraceStore,
 )
 from aegis.observability.cost import InMemoryCostTracker
 from aegis.observability.health import HealthAggregator, StaticHealthCheck
@@ -112,6 +114,7 @@ class Container:
         self.provenance: ProvenanceQuery
         self.artifacts: ArtifactManager
         self.queue: Queue
+        self.trace_store: TraceStore
 
         if database_url is not None:
             from aegis.infrastructure.postgres import PostgresStore
@@ -126,6 +129,7 @@ class Container:
             self.catalog = self.stores.catalog
             self.cancellations = self.stores.cancellations
             self.run_gate_store = self.stores.run_gate_store
+            self.trace_store = self.stores.traces
             self.evidence_repository = self.stores.evidence
             self.provenance = self.stores.provenance
             self.artifacts = self.stores.artifacts
@@ -137,6 +141,7 @@ class Container:
             self.catalog = InMemoryDataCatalog()
             self.cancellations = InMemoryCancellationRegistry()
             self.run_gate_store = MemoryRunGateStore()
+            self.trace_store = MemoryTraceStore()
             self.evidence_repository = MemoryEvidenceRepository()
             self.provenance = MemoryProvenanceIndex()
             self.artifacts = MemoryArtifactManager()
@@ -171,7 +176,7 @@ class Container:
         self.tracer_provider = InMemoryTracerProvider(
             OtlpSpanExporter(otlp_endpoint) if otlp_endpoint else InMemoryExporter()
         )
-        self.preservation = TracePreservationEngine()
+        self.preservation = TracePreservationEngine(store=self.trace_store)
         self.evaluation_tracers = EvaluationTracerProvider(self.preservation)
 
         from aegis.application.evaluation import EvaluationService
