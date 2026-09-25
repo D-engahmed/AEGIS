@@ -34,8 +34,8 @@ from aegis.domain import (
 )
 from aegis.domain.cancellation import CancellationToken
 from aegis.domain.identifiers import new_id
-from aegis.domain.time import Clock
 from aegis.application.run_tracing import TracePayload, TraceStore
+from aegis.domain.time import Clock
 from aegis.evidence.models import (
     ArtifactReference,
     ArtifactType,
