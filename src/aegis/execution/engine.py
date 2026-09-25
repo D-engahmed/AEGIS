@@ -248,12 +248,26 @@ class ExecutionEngine:
         else:
             run = run.fail(fatal, summary, self._clock.now())
         run = replace(run, executions=tuple(ex.id for ex in completed))
+
+        if tracer is not noop_tracer():
+            try:
+                tracer.flush(run.id)
+            except Exception:
+                if run.status is RunStatus.SUCCEEDED:
+                    run = run.fail(
+                        FailureInfo(
+                            FailureCode.INFRASTRUCTURE,
+                            "failed to durably persist evaluation trace",
+                            self._clock.now(),
+                        ),
+                        summary,
+                        self._clock.now(),
+                    )
+
         self._runs.save(run)
         self._reconcile_experiment(run.experiment_id)
 
-        if tracer is not noop_tracer():
-            tracer.flush(run.id)
-        if completed:
+        if completed and run.status is not RunStatus.FAILED:
             trajectory_metrics = self._gateway.evaluate_trajectory(
                 run, completed, dataset.test_cases
             )
