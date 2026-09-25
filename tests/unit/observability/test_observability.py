@@ -21,6 +21,8 @@ from aegis.observability.models import (
     SpanData,
     SpanStatusCode,
 )
+from aegis.application.run_tracing import TracePayload, TraceSpanPayload
+from aegis.infrastructure.memory import MemoryTraceStore
 from aegis.observability.preservation import TracePreservationEngine
 from aegis.observability.tracing import (
     InMemoryExporter,
@@ -144,6 +146,38 @@ def test_operational_span_honors_sample_rate():
     span = _operational_span()
     assert not engine.is_evaluation_span(span)
     assert engine.should_sample(span, sample_rate=1.0) is True
+
+
+def test_persistence_store_round_trips_trace_records():
+    store = MemoryTraceStore()
+    payload = TracePayload(
+        trace_id="trace:raw",
+        run_id="run:raw",
+        execution_id="exe:raw",
+        preserved_at=datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC),
+        spans=(
+            TraceSpanPayload(
+                span_id="span:raw",
+                name="evaluate",
+                trace_id="trace:raw",
+                parent_span_id=None,
+                start_time=datetime(2026, 8, 30, 12, 0, 0, tzinfo=UTC),
+                end_time=datetime(2026, 8, 30, 12, 0, 1, tzinfo=UTC),
+                status="ok",
+                attributes={"a": 1},
+            ),
+        ),
+    )
+    store.persist(payload)
+    assert store.list_for_run("run:raw")[0].spans[0].attributes["a"] == 1
+
+    engine = TracePreservationEngine(store=store)
+    engine.preserve_evaluation_trace("run:1", "trace:1", [_evaluation_span()])
+    records = engine.traces_for_run("run:1")
+    assert len(records) == 1
+    assert records[0].trace_id == "trace:1"
+    assert records[0].spans[0].status is SpanStatusCode.OK
+    assert records[0].spans[0].attributes[SpanAttributes.EXECUTION_ID] == "exe:1"
 
 
 def test_preservation_tracks_runs_and_executions():
