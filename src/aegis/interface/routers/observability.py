@@ -36,7 +36,7 @@ def run_cost(
 ) -> dict[str, float]:
     """Per-run AI spend, target separated from evaluator cost."""
     actor.organization.require_membership(actor.context.user_id)
-    container.run_service.require_run(actor.organization, actor.context.user_id, run_id)
+    container.run_service.require_run(actor.organization, run_id)
     return cost_out(
         container.cost.total_cost(run_id),
         container.cost.target_cost(run_id),
@@ -52,7 +52,7 @@ def run_traces(
 ) -> list[dict[str, object]]:
     """Preserved evaluation traces (never sampled) for a run."""
     actor.organization.require_membership(actor.context.user_id)
-    container.run_service.require_run(actor.organization, actor.context.user_id, run_id)
+    container.run_service.require_run(actor.organization, run_id)
     records = container.preservation.traces_for_run(run_id)
     return [trace_out(t) for t in records]
 
