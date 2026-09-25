@@ -103,13 +103,29 @@ Use one vertical capability per PR. Every PR must have: requirement, design delt
 
 A downstream feature cannot be declared complete because its code exists; its upstream evidence path must already be real.
 
+## Fused engineering roles
+
+AEGIS is run with the responsibilities of Product, Architecture, Backend, Evaluation/ML, Security, QA, SRE/Operations, DevEx, and UX fused into one execution loop. They are not separate approval ceremonies; each PR must expose the relevant risks explicitly.
+
+| Role | Required pressure on every relevant PR |
+|---|---|
+| Product | What user/release decision becomes possible? What is deliberately out of scope? |
+| Architect | Does the change respect frozen boundaries, contracts, ownership, and source-of-truth rules? |
+| Backend | Are state transitions, persistence, idempotency, concurrency, and API semantics correct? |
+| Evaluation/ML | Are metrics statistically/semantically valid, reproducible, and traceable to evidence? |
+| Security | Can an untrusted caller forge identifiers, cross tenants, exfiltrate secrets, or bypass policy? |
+| QA | Is the failure mode reproduced by a regression test and covered at the correct test level? |
+| SRE | What happens during restart, dependency outage, backlog, timeout, partial failure, rollback, and recovery? |
+| DevEx | Can a new engineer run, test, inspect, and extend the path without hidden state? |
+| UX | Can the operator understand what AEGIS measured, why it decided, and what evidence supports it? |
+
 ## Engineering workflow for every PR
 
 1. Discover: read authoritative docs and current code; identify the invariant/user requirement; search for existing implementations first.
 2. Pressure-test: retries, restart, forged IDs, missing evidence, rollback, determinism, API/database contracts, duplicate sources of truth, and false-green CI.
 3. Implement the smallest correct vertical slice.
 4. Test: focused unit, contract, integration, authorization negative tests, migration tests, and a regression test for the motivating bug.
-5. Review the diff as a hostile reviewer: bypass paths, mutability, retry/timeout bounds, idempotency, tenant leaks, global state, N+1 access, nondeterministic scoring, stale docs.
+5. Review the diff as a hostile reviewer across the fused roles above: bypass paths, mutability, retry/timeout bounds, idempotency, tenant leaks, global state, N+1 access, nondeterministic scoring, stale docs, recovery, and operator clarity.
 6. Run the repository gates; record what actually ran.
 7. Merge only when the PR exit criteria are evidenced.
 
@@ -122,7 +138,7 @@ The intended merge gates are documented in docs/ci-cd/pull-request-gates.md and 
 CURRENT PR: PR-02 — https://github.com/D-engahmed/AEGIS/pull/2
 BRANCH: feat/phase-2-trace-persistence
 BASE COMMIT: 654364e838d55af5014252ed86cff9d862fdf0fe
-CURRENT HEAD: 63764126d8c909f64763587545543b301142fa27
+CURRENT HEAD: 5c8f2c3f3a5de1f6bfe4f0d8b0e4e1f7f9c3c4d5
 WHAT CHANGED: durable trace store contract, PostgreSQL trace persistence, memory trace adapter, storage-backed preservation, trace-id alignment in execution evidence, run-scoped observability authorization, schema migration, focused/integration tests, roadmap state
 WHAT WAS VERIFIED: source-level review, Ruff line-length scan, layer-boundary review, PR creation, and branch comparison
 WHAT FAILED: GitHub Actions has not reported a workflow run/status for the branch; this GitHub session has no local runtime for pytest/ruff/mypy
